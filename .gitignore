@@ -1,0 +1,38 @@
+# See https://help.github.com/articles/ignoring-files/
+# --- CRA 기본 ---
+/node_modules
+/.pnp
+.pnp.js
+
+# testing
+/coverage
+
+# production
+/build
+
+# misc
+.DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- 추가: 프론트엔드 ---
+.env            # 루트 .env
+*.env           # 혹시 다른 이름의 env 파일
+*.log           # 기타 로그
+
+# --- 추가: 백엔드(Flask) ---
+ai-music-backend/.env
+ai-music-backend/venv/
+ai-music-backend/tmp/
+ai-music-backend/static/audio/
+ai-music-backend/__pycache__/
+ai-music-backend/*.pyc
+
+# --- 공통 파이썬 캐시 ---
+__pycache__/
+*.pyc
