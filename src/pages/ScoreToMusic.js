@@ -1,7 +1,7 @@
-// 파일 최상단: 모든 import는 최상단에 위치
+// musicgen-app-main/src/pages/ScoreToMusic.js
+
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ErrorBoundary } from 'react-error-boundary';
 import { useMusicContext } from '../context/MusicContext';
 import {
     Typography,
@@ -15,26 +15,15 @@ import {
 } from '@mui/material';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 
-// ErrorFallback 컴포넌트 정의 (ErrorBoundary용)
-const ErrorFallback = ({ error, resetErrorBoundary }) => (
-    <Box sx={{ color: 'red', p: 4, textAlign: 'center' }}>
-        <Typography variant="h6">오류가 발생했습니다.</Typography>
-        <Typography variant="body2">{error.message}</Typography>
-        <Button onClick={resetErrorBoundary} sx={{ mt: 2 }} variant="contained">
-            다시 시도
-        </Button>
-    </Box>
-);
-
 const ScoreToMusic = () => {
     const [pdfFile, setPdfFile] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const [fileName, setFileName] = useState('');
-    const [outputFormat, setOutputFormat] = useState('midi');
+    const [format, setFormat] = useState('midi'); // 변환 형식 상태
     const navigate = useNavigate();
+    
     const { actions } = useMusicContext();
 
-    // PDF 파일 선택
     const handleFileChange = (event) => {
         const file = event.target.files[0];
         if (file && file.type === "application/pdf") {
@@ -47,57 +36,104 @@ const ScoreToMusic = () => {
         }
     };
 
-    // 변환 요청
-    const handleSubmit = async () => {
-        if (!pdfFile) {
-            alert("악보 PDF 파일을 업로드해주세요.");
-            return;
-        }
-
-        setIsLoading(true);
-        const formData = new FormData();
-        formData.append('score', pdfFile);
-        formData.append('format', outputFormat);
-
-        try {
-            const response = await fetch('http://127.0.0.1:5000/api/process-score', {
-                method: 'POST',
-                body: formData,
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || '악보 처리에 실패했습니다.');
-            }
-
-            const data = await response.json();
-            if (!data.success || !data.result) {
-                throw new Error('파일 생성에 실패했습니다.');
-            }
-
-            actions.setResult?.({
-                convertedMusic: {
-                    id: data.result.id,
-                    title: data.result.title,
-                    audioUrl: data.result.audioUrl,
-                    format: outputFormat.toUpperCase(),
-                    genres: data.result.genres || ['Classical'],
-                    duration: data.result.duration || 180,
-                    createdAt: new Date().toISOString(),
-                    type: 'score-conversion',
-                    originalFile: fileName,
-                }
-            });
-
-            navigate('/result');
-
-        } catch (error) {
-            console.error("Error processing score:", error);
-            alert(`악보 처리 중 오류가 발생했습니다: ${error.message}`);
-        } finally {
-            setIsLoading(false);
-        }
+    const handleFormatChange = (event) => {
+        setFormat(event.target.value);
     };
+
+    // 작업 상태 폴링
+    const pollTaskStatus = async (taskId) => {
+        const maxAttempts = 60;
+        let attempts = 0;
+
+        while (attempts < maxAttempts) {
+            try {
+                const response = await fetch(`http://127.0.0.1:5000/api/music/task/status?taskId=${taskId}`);
+                if (!response.ok) throw new Error('작업 상태 확인 실패');
+
+                const statusData = await response.json();
+                console.log('작업 상태:', statusData);
+                
+                if (statusData.status === 'succeeded') {
+                    const musicData = {
+                        id: statusData.result?.id || `score_${Date.now()}`,
+                        title: statusData.result?.title || `악보 기반 생성 음악`,
+                        audioUrl: statusData.audioUrl || statusData.result?.audioUrl,
+                        genres: statusData.result?.genres || ['Classical'],
+                        moods: statusData.result?.moods || [],
+                        duration: statusData.result?.duration || 180,
+                        createdAt: statusData.result?.createdAt || new Date().toISOString(),
+                        type: 'score-generated',
+                        originalFile: fileName,
+                        targetGenre: 'Classical',
+                        format: format
+                    };
+
+                    console.log('생성된 musicData:', musicData);
+
+                    if (actions.setResult) actions.setResult({ convertedMusic: musicData });
+                    localStorage.setItem('scoreGeneratedMusic', JSON.stringify(musicData));
+
+                    return true;
+                } else if (statusData.status === 'failed') {
+                    throw new Error(statusData.error || '음악 생성 실패');
+                } else if (statusData.status === 'running' || statusData.status === 'queued') {
+                    console.log(`작업 진행중... (${attempts + 1}/${maxAttempts})`);
+                    await new Promise(resolve => setTimeout(resolve, 5000));
+                    attempts++;
+                } else {
+                    throw new Error(`알 수 없는 작업 상태: ${statusData.status}`);
+                }
+            } catch (error) {
+                console.error('작업 상태 확인 중 오류:', error);
+                throw error;
+            }
+        }
+        throw new Error('작업 시간 초과 (30분)');
+    };
+
+    const handleSubmit = async () => {
+    if (!pdfFile) {
+        alert("악보 PDF 파일을 업로드해주세요.");
+        return;
+    }
+
+    setIsLoading(true);
+    const formData = new FormData();
+    formData.append('score', pdfFile);
+    formData.append('format', format); // 선택된 변환 형식 전송
+
+    try {
+        console.log('=== 악보 처리 시작 ===');
+        const response = await fetch('http://127.0.0.1:5000/api/process-score', {
+            method: 'POST',
+            body: formData,
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || '음악 생성에 실패했습니다.');
+        }
+
+        const data = await response.json();
+        console.log('서버 응답:', data);
+
+        const taskId = data.taskId;
+        if (!taskId) throw new Error('작업 ID를 받을 수 없습니다.');
+
+        await pollTaskStatus(taskId);
+
+        // ✅ navigate를 먼저 실행 (setIsLoading보다 우선)
+        navigate('/result');
+
+    } catch (error) {
+        console.error("Error generating music from score:", error);
+        alert(`음악 생성 중 오류가 발생했습니다: ${error.message}`);
+    } finally {
+        // ✅ navigate 후 1초 뒤 상태 해제 (안정성 확보)
+        setTimeout(() => setIsLoading(false), 1000);
+    }
+};
+
 
     return (
         <Box
@@ -107,8 +143,9 @@ const ScoreToMusic = () => {
                 bgcolor: '#000',
                 display: 'flex',
                 justifyContent: 'center',
-                alignItems: 'center',
-                py: 4,
+                alignItems: 'flex-start',
+                pt: 8,
+                pb: 4,
             }}
         >
             <Box
@@ -123,12 +160,13 @@ const ScoreToMusic = () => {
                 }}
             >
                 <Typography variant="h4" gutterBottom>
-                    악보 변환하기
+                    악보 연주하기
                 </Typography>
                 <Typography variant="body1" sx={{ mb: 4, color: '#CCC' }}>
-                    PDF 악보를 업로드하고 원하는 형식으로 변환해보세요.
+                    PDF 악보 파일을 업로드하면 AI가 분석하여 음악을 연주해줍니다.
                 </Typography>
 
+                {/* 파일 업로드 영역 */}
                 <Box
                     sx={{
                         border: '2px dashed #555',
@@ -136,12 +174,16 @@ const ScoreToMusic = () => {
                         p: 4,
                         mb: 3,
                         cursor: 'pointer',
-                        '&:hover': { borderColor: '#50E3C2', bgcolor: '#111' },
+                        bgcolor: '#0a0a0a',
+                        '&:hover': {
+                            borderColor: '#50E3C2',
+                            bgcolor: '#111'
+                        }
                     }}
                     onClick={() => document.getElementById('pdf-upload').click()}
                 >
                     <UploadFileIcon sx={{ fontSize: 60, color: '#777' }} />
-                    <Typography sx={{ mt: 1 }}>
+                    <Typography sx={{ color: '#CCC', mt: 1 }}>
                         {fileName || '클릭하여 PDF 파일을 선택하세요'}
                     </Typography>
                     <input
@@ -153,49 +195,64 @@ const ScoreToMusic = () => {
                     />
                 </Box>
 
-                <FormControl fullWidth sx={{ mb: 3 }}>
-                    <InputLabel sx={{ color: '#CCC' }}>출력 형식</InputLabel>
+                {/* 변환 형식 선택 */}
+                <FormControl
+                    fullWidth
+                    sx={{ mb: 3, bgcolor: '#0a0a0a', borderRadius: 1 }}
+                >
+                    <InputLabel sx={{ color: '#CCC' }}>변환 형식</InputLabel>
                     <Select
-                        value={outputFormat}
-                        onChange={(e) => setOutputFormat(e.target.value)}
-                        label="출력 형식"
+                        value={format}
+                        onChange={handleFormatChange}
                         sx={{
                             color: '#FFF',
+                            borderColor: '#555',
                             '.MuiOutlinedInput-notchedOutline': { borderColor: '#555' },
                             '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#50E3C2' },
-                            '& .MuiSvgIcon-root': { color: '#FFF' }
+                            '& .MuiSvgIcon-root': { color: '#50E3C2' },
                         }}
                     >
-                        <MenuItem value="midi">MIDI</MenuItem>
-                        <MenuItem value="mp3">MP3</MenuItem>
-                        <MenuItem value="wav">WAV</MenuItem>
-                        <MenuItem value="musicxml">MusicXML</MenuItem>
+                        <MenuItem value="midi">MIDI로 변환</MenuItem>
+                        <MenuItem value="wav">WAV로 변환</MenuItem>
+                       
                     </Select>
                 </FormControl>
 
+                {/* 변환 버튼 */}
                 <Button
                     variant="contained"
+                    color="primary"
                     size="large"
                     onClick={handleSubmit}
                     disabled={isLoading || !pdfFile}
                     sx={{
                         minWidth: '200px',
+                        minHeight: '50px',
                         bgcolor: '#50E3C2',
                         color: '#000',
                         fontWeight: 600,
-                        '&:hover': { bgcolor: '#40D9B8' }
+                        '&:hover': { bgcolor: '#40D9B8' },
+                        '&:disabled': { bgcolor: '#333', color: '#666' }
                     }}
                 >
-                    {isLoading ? <CircularProgress size={24} /> : `${outputFormat.toUpperCase()} 변환`}
+                    {isLoading ? (
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                            <CircularProgress size={24} color="inherit" />
+                            <span>처리 중...</span>
+                        </Box>
+                    ) : (
+                        '변환하기'
+                    )}
                 </Button>
 
+                {/* 로딩 상태 표시 */}
                 {isLoading && (
                     <Box sx={{ mt: 3 }}>
-                        <Typography variant="body2" sx={{ color: '#AAA' }}>
-                            악보를 분석하고 {outputFormat.toUpperCase()} 파일을 생성하는 중입니다...
+                        <Typography variant="body2" sx={{ color: '#AAA', mb: 1 }}>
+                            악보를 분석하고 {format.toUpperCase()} 형식으로 변환 중입니다...
                         </Typography>
-                        <Typography variant="caption" sx={{ color: '#666', mt: 1, display: 'block' }}>
-                            PDF → MusicXML → {outputFormat.toUpperCase()} 변환 중 (약 1-2분 소요)
+                        <Typography variant="caption" sx={{ color: '#666' }}>
+                            최대 10분이 소요될 수 있습니다.
                         </Typography>
                     </Box>
                 )}
@@ -204,11 +261,4 @@ const ScoreToMusic = () => {
     );
 };
 
-// 최종 export 시 ErrorBoundary 적용
-const WrappedScoreToMusic = () => (
-    <ErrorBoundary FallbackComponent={ErrorFallback}>
-        <ScoreToMusic />
-    </ErrorBoundary>
-);
-
-export default WrappedScoreToMusic;
+export default ScoreToMusic;

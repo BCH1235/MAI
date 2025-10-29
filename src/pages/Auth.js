@@ -147,7 +147,7 @@ export default function AuthPage() {
         >
           <Box sx={{ p: { xs: 4, md: 6 } }}>
             <Typography variant="h4" sx={{ fontWeight: 700, textAlign: 'center', mb: 1 }}>
-              AI Music Studio
+              AI MUSE
             </Typography>
             <Typography sx={{ color: colors.textMuted, textAlign: 'center', mb: 4 }}>
               나만의 음악을 저장하고 공유하려면 먼저 로그인하세요.

@@ -89,6 +89,7 @@ const actionTypes = {
   SET_PLAYING: 'SET_PLAYING',
   UPDATE_CURRENT_TIME: 'UPDATE_CURRENT_TIME',
   SET_RESULT_MUSIC: 'SET_RESULT_MUSIC',
+  SET_RESULT: 'SET_RESULT',
   
   // 라이브러리 액션
   ADD_TO_LIBRARY: 'ADD_TO_LIBRARY',
@@ -275,6 +276,15 @@ function musicReducer(state, action) {
         result: {
           ...state.result,
           currentTime: action.payload
+        }
+      };
+
+      case actionTypes.SET_RESULT:
+      return {
+        ...state,
+        result: {
+          ...state.result,
+          ...action.payload
         }
       };
     
@@ -488,6 +498,11 @@ export function MusicContextProvider({ children }) {
       dispatch({ type: actionTypes.UPDATE_CURRENT_TIME, payload: time });
     }, []),
     
+    setResult: useCallback((resultData) => {
+      console.log('MusicContext setResult 호출됨:', resultData);
+      dispatch({ type: actionTypes.SET_RESULT, payload: resultData });
+    }, []),
+
     // 라이브러리 관련 액션들
     addToLibrary: useCallback((musicData) => {
       dispatch({ type: actionTypes.ADD_TO_LIBRARY, payload: musicData });
