@@ -1,4 +1,5 @@
-import React, { useRef, useState } from "react";
+// src/components/beat/BlendPadCanvas.jsx
+import React, { useEffect, useRef, useState } from "react";
 import { useBeatPad } from "../../state/beatPadStore";
 import { useCellGrid } from "../../hooks/useCellGrid";
 import { cellCache } from "../../lib/beatblender/cellCache";
@@ -8,18 +9,28 @@ export default function BlendPadCanvas({ corners, onDecodedPattern }) {
   const ref = useRef(null);
   const { state, dispatch } = useBeatPad();
   const { toCell, centerOf } = useCellGrid(state.grid.cols, state.grid.rows);
+
   const [dragging, setDragging] = useState(false);
   const lastIndexRef = useRef(-1);
   const lastPathPointRef = useRef({ x: -1, y: -1 });
 
+  // ────────────────────────────────────────────────────────────
+  // 좌표 보정: 0~1 정규화 좌표로 변환
+  // ────────────────────────────────────────────────────────────
   const getXY01 = (e) => {
-    const r = ref.current.getBoundingClientRect();
-    const p = "touches" in e ? e.touches[0] : e;
-    const x = (p.clientX - r.left) / r.width;
-    const y = (p.clientY - r.top) / r.height;
+    const el = ref.current;
+    if (!el) return { x: 0.5, y: 0.5 };
+    const r = el.getBoundingClientRect();
+    const px = e.clientX ?? (e.touches && e.touches[0]?.clientX) ?? 0;
+    const py = e.clientY ?? (e.touches && e.touches[0]?.clientY) ?? 0;
+    const x = (px - r.left) / r.width;
+    const y = (py - r.top) / r.height;
     return { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) };
   };
 
+  // ────────────────────────────────────────────────────────────
+  // VAE 인코딩/디코딩 보조
+  // ────────────────────────────────────────────────────────────
   const ensureEncodings = async () => {
     if (state.cornerEncodings) return state.cornerEncodings;
     if (!corners) return null;
@@ -42,12 +53,15 @@ export default function BlendPadCanvas({ corners, onDecodedPattern }) {
     return pattern;
   };
 
-  // 셀 모드: 스냅된 셀마다 즉시 디코드
+  // ────────────────────────────────────────────────────────────
+  // CELL 모드: 셀 스냅 후 즉시 디코드
+  // ────────────────────────────────────────────────────────────
   const applyAtEventCellMode = async (e) => {
     const { x, y } = getXY01(e);
     const cell = toCell(x, y);
     dispatch({ type: "SELECT_CELL", cell });
 
+    // 같은 셀 반복 디코드 방지
     if (cell.index === lastIndexRef.current) return;
     lastIndexRef.current = cell.index;
 
@@ -55,62 +69,88 @@ export default function BlendPadCanvas({ corners, onDecodedPattern }) {
     if (pattern && onDecodedPattern) onDecodedPattern(pattern);
   };
 
-  // 그리기 모드: 경로 수집(중복/초근접 점은 무시)
+  // ────────────────────────────────────────────────────────────
+  // DRAW 모드: 경로 점 누적(너무 촘촘하면 스킵)
+  // ────────────────────────────────────────────────────────────
   const pushPathPoint = (x, y) => {
     const prev = lastPathPointRef.current;
     const dx = x - prev.x, dy = y - prev.y;
-    if (prev.x < 0 || Math.hypot(dx, dy) > 0.01) { // 1% 이상 이동 시만 샘플
+    // 1% 이상 이동했을 때만 샘플링
+    if (prev.x < 0 || Math.hypot(dx, dy) > 0.01) {
       dispatch({ type: "APPEND_PATH_POINT", point: { x, y } });
       lastPathPointRef.current = { x, y };
     }
   };
 
-  const onDown = (e) => {
-    setDragging(true);
-    lastIndexRef.current = -1;
-    lastPathPointRef.current = { x: -1, y: -1 };
+  // ────────────────────────────────────────────────────────────
+  // Pointer 이벤트: 마우스/터치 통합
+  // ────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
 
-    if (state.mode === "CELL") {
-      applyAtEventCellMode(e);
-    } else {
-      const { x, y } = getXY01(e);
-      // 새 경로 시작: 기존 경로 지우고 첫 점 push
-      dispatch({ type: "RESET_PATH" });
-      dispatch({ type: "APPEND_PATH_POINT", point: { x, y } });
-      lastPathPointRef.current = { x, y };
-      
-    }
+    const onPointerDown = (e) => {
+      // 우클릭 컨텍스트 메뉴 방지
+      if (e.button === 2) return;
+      setDragging(true);
+      lastIndexRef.current = -1;
+      lastPathPointRef.current = { x: -1, y: -1 };
+      el.setPointerCapture?.(e.pointerId);
 
-    window.addEventListener("mousemove", onMove, { passive: true });
-    window.addEventListener("mouseup", onUp);
-    window.addEventListener("touchmove", onMove, { passive: true });
-    window.addEventListener("touchend", onUp);
-  };
+      if (state.mode === "CELL") {
+        applyAtEventCellMode(e);
+      } else {
+        const { x, y } = getXY01(e);
+        dispatch({ type: "RESET_PATH" });
+        dispatch({ type: "APPEND_PATH_POINT", point: { x, y } });
+        lastPathPointRef.current = { x, y };
+      }
 
-  const onMove = (e) => {
-    if (!dragging) return;
-    if (state.mode === "CELL") {
-      applyAtEventCellMode(e);
-    } else {
-      const { x, y } = getXY01(e);
-      pushPathPoint(x, y);
-    }
-  };
+      e.preventDefault();
+    };
 
-  const onUp = () => {
-    setDragging(false);
-    window.removeEventListener("mousemove", onMove);
-    window.removeEventListener("mouseup", onUp);
-    window.removeEventListener("touchmove", onMove);
-    window.removeEventListener("touchend", onUp);
-  };
+    const onPointerMove = (e) => {
+      if (!dragging) return;
+      if (state.mode === "CELL") {
+        // 왼쪽 버튼을 누르고 있는 동안만
+        if ((e.buttons & 1) === 0 && e.pointerType !== "touch") return;
+        applyAtEventCellMode(e);
+      } else {
+        const { x, y } = getXY01(e);
+        pushPathPoint(x, y);
+      }
+    };
+
+    const endDrag = (e) => {
+      setDragging(false);
+      el.releasePointerCapture?.(e.pointerId);
+    };
+
+    el.addEventListener("pointerdown", onPointerDown, { passive: false });
+    window.addEventListener("pointermove", onPointerMove, { passive: true });
+    window.addEventListener("pointerup", endDrag);
+    window.addEventListener("pointercancel", endDrag);
+    window.addEventListener("pointerleave", endDrag);
+
+    return () => {
+      el.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", endDrag);
+      window.removeEventListener("pointercancel", endDrag);
+      window.removeEventListener("pointerleave", endDrag);
+    };
+    // state.mode만 의존 (corners/encodings은 내부 ensure 함수에서 처리)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.mode, dragging]);
 
   return (
     <canvas
       ref={ref}
       className="blendpad-canvas"
-      onMouseDown={onDown}
-      onTouchStart={onDown}
+      onContextMenu={(e) => e.preventDefault()}
+      role="application"
+      tabIndex={0}
+      aria-label="Beat blend pad"
     />
   );
 }
