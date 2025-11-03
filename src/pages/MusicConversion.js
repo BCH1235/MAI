@@ -1,3 +1,4 @@
+// src/pages/MusicConversion.js
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Container, Paper, Typography } from '@mui/material';
 import MusicNote from '@mui/icons-material/MusicNote';
@@ -5,13 +6,20 @@ import { useNavigate } from 'react-router-dom';
 
 import TransportBar from '../components/beat/TransportBar';
 import BeatGrid from '../components/beat/BeatGrid';
-import BlendPad from '../components/beat/BlendPad';
+// import BlendPad from '../components/beat/BlendPad';
 import { createKit } from '../components/beat/SampleKit';
 import { PRESETS, clonePattern, TRACKS } from '../components/beat/presets';
 import { downloadBlob } from '../utils/audioExport';
 import { getTone, ensureAudioStart } from '../lib/toneCompat';
 import { useMusicContext } from '../context/MusicContext';
 import { saveBeatItem } from '../services/libraryWriter';
+
+import { BeatPadProvider } from '../state/beatPadStore';
+import PadToolbar from '../components/beat/PadToolbar';
+import BlendPadCanvas from '../components/beat/BlendPadCanvas';
+import BlendPadGhostLayer from '../components/beat/BlendPadGhostLayer';
+import PathOverlay from '../components/beat/PathOverlay';
+import '../styles/beatpad.css';
 
 const colors = {
   background: '#0A0A0A',
@@ -24,9 +32,7 @@ const colors = {
 };
 
 const STEPS = 16;
-
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-
 const blobToDataURL = (blob) =>
   new Promise((resolve) => {
     const fr = new FileReader();
@@ -37,6 +43,7 @@ const blobToDataURL = (blob) =>
 export default function MusicConversion() {
   const navigate = useNavigate();
   const { state, actions } = useMusicContext();
+
   const [pattern, setPattern] = useState(clonePattern(PRESETS['Four on the floor']));
   const [currentStep, setCurrentStep] = useState(-1);
   const [bpm, setBpm] = useState(96);
@@ -44,7 +51,7 @@ export default function MusicConversion() {
   const [busy, setBusy] = useState(false);
   const [busyMsg, setBusyMsg] = useState('');
 
-  const [corners, setCorners] = useState({
+  const [corners] = useState({
     A: clonePattern(PRESETS['Rock 1']),
     B: clonePattern(PRESETS['Pop Punk']),
     C: clonePattern(PRESETS['Reggaeton']),
@@ -109,9 +116,7 @@ export default function MusicConversion() {
       const seq = new Tone.Sequence(
         (time, i) => {
           if (pattern[t] && pattern[t][i]) kit.trigger(t, time);
-          Tone.Draw.schedule(() => {
-            setCurrentStep(i);
-          }, time);
+          Tone.Draw.schedule(() => setCurrentStep(i), time);
         },
         Array.from({ length: STEPS }, (_, i) => i),
         '16n'
@@ -131,29 +136,28 @@ export default function MusicConversion() {
     await stopAll();
     const kit = kitRef.current;
     if (!kit) return null;
+
     TRACKS.forEach((t) => {
       const seq = new Tone.Sequence(
-        (time, i) => {
-          if (pattern[t] && pattern[t][i]) {
-            kit.trigger(t, time);
-          }
-        },
+        (time, i) => { if (pattern[t] && pattern[t][i]) kit.trigger(t, time); },
         Array.from({ length: STEPS }, (_, i) => i),
         '16n'
       );
       seq.start(0);
       seqRefs.current[t] = seq;
     });
-    if (Tone?.Transport?.bpm?.value != null) {
-      Tone.Transport.bpm.value = bpm;
-    }
+
+    if (Tone?.Transport?.bpm?.value != null) Tone.Transport.bpm.value = bpm;
+
     const recorder = new Tone.Recorder();
     Tone.Destination.connect(recorder);
     recorder.start();
     Tone.Transport.start('+0.03');
+
     const secondsPerBeat = 60 / bpm;
     const totalSec = Math.max(1, bars) * (secondsPerBeat * 4);
     await wait(totalSec * 1000 + 200);
+
     const wavBlob = await recorder.stop();
     Tone.Destination.disconnect(recorder);
     await stopAll();
@@ -167,15 +171,7 @@ export default function MusicConversion() {
     if (!wavBlob || !user) return false;
     try {
       const title = `${titleHint || 'My Beat'}_${bpm}bpm_${Date.now()}`;
-      await saveBeatItem({
-        ownerId: user.uid,
-        title,
-        bpm,
-        bars,
-        pattern,
-        audioBlob: wavBlob,
-        presetMeta: null,
-      });
+      await saveBeatItem({ ownerId: user.uid, title, bpm, bars, pattern, audioBlob: wavBlob, presetMeta: null });
       actions.addNotification({ type: 'success', message: '비트가 라이브러리에 저장되었습니다!' });
       return true;
     } catch (error) {
@@ -201,9 +197,7 @@ export default function MusicConversion() {
     const wavBlob = await renderBeatToWavBlob();
     if (wavBlob) {
       const user = state.auth.user;
-      if (user) {
-        await saveBeatToLibrary(wavBlob, 'Beat');
-      }
+      if (user) await saveBeatToLibrary(wavBlob, 'Beat');
       setBusy(true);
       setBusyMsg('보내는 중...');
       const dataUrl = await blobToDataURL(wavBlob);
@@ -218,9 +212,7 @@ export default function MusicConversion() {
 
   const onClear = () => {
     const emptyPattern = {};
-    TRACKS.forEach(track => {
-      emptyPattern[track] = Array(STEPS).fill(false);
-    });
+    TRACKS.forEach(track => { emptyPattern[track] = Array(STEPS).fill(false); });
     setPattern(emptyPattern);
   };
 
@@ -234,6 +226,7 @@ export default function MusicConversion() {
           <MusicNote sx={{ mr: 1, color: colorsMemo.primary }} />
           비트 만들기
         </Typography>
+
         <Box
           sx={{
             display: 'flex',
@@ -243,26 +236,34 @@ export default function MusicConversion() {
             flexWrap: { xs: 'wrap', md: 'nowrap' },
           }}
         >
+          {/* 좌: 패드 영역 */}
           <Box sx={{ flex: { xs: '1 1 100%', md: '0 1 420px', lg: '0 1 460px' }, minWidth: 0 }}>
             <Paper
               elevation={0}
               sx={{
                 bgcolor: colorsMemo.cardBg, p: 3, borderRadius: 3, border: `1px solid ${colorsMemo.border}`,
-                display: 'flex', flexDirection: 'column', height: '100%',
-                minWidth: 0, overflow: 'hidden',
+                display: 'flex', flexDirection: 'column', height: '100%', minWidth: 0, overflow: 'hidden',
               }}
             >
               <Typography variant="h6" sx={{ color: colorsMemo.text, fontWeight: 600, mb: 2, flexShrink: 0 }}>
                 패드 블렌딩
               </Typography>
-              <BlendPad
-                colors={colorsMemo}
-                corners={corners}
-                onChangeCorners={setCorners}
-                onBlend={setPattern}
-              />
+
+              <BeatPadProvider>
+                <PadToolbar
+                  corners={corners}
+                  onApplyPattern={setPattern}
+                />
+                <Box className="pad-stack">
+                  <BlendPadCanvas corners={corners} onDecodedPattern={setPattern} />
+                  <BlendPadGhostLayer corners={corners} />
+                  <PathOverlay />
+                </Box>
+              </BeatPadProvider>
             </Paper>
           </Box>
+
+          {/* 우: 시퀀서/컨트롤 */}
           <Box sx={{ flex: { xs: '1 1 100%', md: '1 1 0%' }, minWidth: 0 }}>
             <Paper
               elevation={0}
@@ -275,9 +276,11 @@ export default function MusicConversion() {
                 busy={busy || !isKitReady}
                 busyMsg={!isKitReady ? '오디오 샘플 로딩 중...' : busyMsg}
               />
+
               <Box sx={{ mt: 3, overflowX: 'auto' }}>
                 <BeatGrid pattern={pattern} currentStep={currentStep} onToggle={onToggle} />
               </Box>
+
               <Typography variant="body2" sx={{ mt: 2, color: colorsMemo.textLight }}>
                 팁: 패드의 위치를 바꾸면 4개 코너 프리셋을 섞어 새 패턴이 만들어져요. 그리드에서 직접 찍어도 됩니다.
               </Typography>

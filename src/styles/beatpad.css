@@ -1,0 +1,52 @@
+/* 패드 컨테이너(크기/둥근모서리/배경) */
+.pad-stack {
+  position: relative;
+  width: 100%;
+  height: 320px;          /* 필요하면 360px 등으로 바꿔도 됨 */
+  border-radius: 12px;
+  overflow: hidden;
+  background: #1b1b1b;
+  /* 기본 그리드 느낌의 배경(셀 수와 정확히 일치하진 않지만 빈 화면 방지용) */
+  background-image:
+    repeating-linear-gradient(0deg, rgba(255,255,255,0.05) 0 1px, transparent 1px 24px),
+    repeating-linear-gradient(90deg, rgba(255,255,255,0.05) 0 1px, transparent 1px 24px);
+  background-size: 100% 100%;
+}
+
+/* 두 캔버스는 래퍼를 꽉 채움 */
+.blendpad-canvas,
+.blendpad-ghost {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* 클릭/드래그용 캔버스 */
+.blendpad-canvas {
+  cursor: crosshair;         /* 셀 모드일 때 */
+}
+
+/* 고스트 미리보기는 포인터를 막아야 클릭이 아래로 전달됨 */
+.blendpad-ghost {
+  pointer-events: none;
+}
+
+/* (선택) 다크 테마 경계 강조 */
+.pad-stack::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 12px;
+  pointer-events: none;
+}
+
+.path-overlay{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  pointer-events:none;          /* 경로 캔버스는 클릭 막지 않도록 */
+}
