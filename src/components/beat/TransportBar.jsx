@@ -5,7 +5,6 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import DownloadIcon from '@mui/icons-material/Download';
-import SendIcon from '@mui/icons-material/Send';
 
 export default function TransportBar(props) {
   const {
@@ -18,7 +17,6 @@ export default function TransportBar(props) {
     onStop,
     onClear,
     onExport,
-    onSendToGenerate,
     busy = false,
     busyMsg = '',
   } = props;
@@ -160,22 +158,6 @@ export default function TransportBar(props) {
         >
           {/* 변경점 2: '(WAV)' 텍스트 제거 */}
           다운로드
-        </Button>
-        <Button
-          variant="contained"
-          startIcon={<SendIcon />}
-          onClick={onSendToGenerate}
-          disabled={busy}
-          size="large"
-          sx={{
-            bgcolor: colors.accent,
-            color: colors.background,
-            '&:hover': {
-              bgcolor: '#28bfa8'
-            }
-          }}
-        >
-          생성하기로 보내기
         </Button>
       </Stack>
 

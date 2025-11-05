@@ -1,114 +1,127 @@
-import * as tf from '@tensorflow/tfjs';
-import { loadMagenta } from './magentaCompat';
+// src/lib/drumsVAE.js
+import * as mm from '@magenta/music';
 import { TRACKS } from '../components/beat/presets';
 
-const CHECKPOINT =
-  'https://storage.googleapis.com/magentadata/js/checkpoints/music_vae/drums_2bar_lokl_small';
+// ✅ Magenta 공식 드럼 VAE 체크포인트(2bar, 경량)
+const CKPT =
+  'https://storage.googleapis.com/magentadata/js/checkpoints/music_vae/drums_2bar_small';
 
-let vae = null;
-let ready = false;
+let _vae = null;
 
-const DRUM_PITCH_MAP = {
-  'kick': 36, 
-  'snare': 38, 
-  'hatClose': 42, 
-  'hatOpen': 46,
-  'tomLow': 45, 
-  'tomMid': 48, 
-  'tomHigh': 50,
-  'crash': 49, 
-  'ride': 51
-};
-const PITCH_DRUM_MAP = Object.fromEntries(Object.entries(DRUM_PITCH_MAP).map(a => [a[1], a[0]]));
-
-export async function loadDrumsVAE(checkpointUrl = CHECKPOINT) {
-  if (vae && ready) return vae;
-  const { MusicVAE } = await loadMagenta();
-  vae = new MusicVAE(checkpointUrl);
+/** VAE 싱글턴 로딩 */
+export async function loadDrumsVAE() {
+  if (_vae) return _vae;
+  const vae = new mm.MusicVAE(CKPT);
   await vae.initialize();
-  ready = true;
-  return vae;
+  _vae = vae;
+  return _vae;
 }
 
-export async function patternToNoteSequence(pattern, bars = 2, stepsPerBar = 16, qpm = 120) {
-  const { sequences } = await loadMagenta();
-  const total = bars * stepsPerBar;
-  const seq = sequences.createQuantizedNoteSequence(4);
-  seq.tempos = [{ qpm }];
+/** 16스텝 드럼 패턴 → Quantized NoteSequence */
+function patternToQuantizedNS(pattern, stepsPerQuarter = 4 /*16분음표*/) {
+  // 간단한 드럼 피치 매핑
+  const DRUM_PITCH = {
+    Kick: 36,
+    Snare: 38,
+    'Hat (C)': 42,
+    'Hat (O)': 46,
+    'Tom (L)': 45,
+    'Tom (M)': 47,
+    'Tom (H)': 50,
+    Crash: 49,
+    Ride: 51,
+  };
 
-  for (const trackName of TRACKS) {
-    const pitch = DRUM_PITCH_MAP[trackName];
-    if (pattern && pattern[trackName]) {
-      const arr = pattern[trackName];
-      for (let b = 0; b < bars; b++) {
-        for (let i = 0; i < stepsPerBar; i++) {
-          if (arr[i]) {
-            const step = b * stepsPerBar + i;
-            seq.notes.push({
-              pitch,
-              quantizedStartStep: step,
-              quantizedEndStep: step + 1,
-              isDrum: true,
-              velocity: 100,
-            });
-          }
-        }
+  const notes = [];
+  for (const track of TRACKS) {
+    const arr = pattern[track] || [];
+    const pitch = DRUM_PITCH[track] ?? 36; // fallback: kick
+    for (let i = 0; i < 16; i++) {
+      if (arr[i]) {
+        notes.push({
+          pitch,
+          isDrum: true,
+          quantizedStartStep: i,
+          quantizedEndStep: i + 1,
+        });
       }
     }
   }
-  seq.totalQuantizedSteps = total;
-  return seq;
-}
 
-export function noteSequenceToPattern(seq, stepsOut = 16) {
-  const pat = {};
-  TRACKS.forEach(t => pat[t] = Array(stepsOut).fill(false));
-  for (const n of seq.notes || []) {
-    if (!n.isDrum) continue;
-    const trackName = PITCH_DRUM_MAP[n.pitch];
-    if (!trackName) continue;
-    const step = (n.quantizedStartStep || 0) % stepsOut;
-    pat[trackName][step] = true;
-  }
-  return pat;
-}
-
-export async function encodeCorners(corners, qpm = 120) {
-  const model = await loadDrumsVAE();
-  const seqs = await Promise.all(
-    ['A','B','C','D'].map((k) => patternToNoteSequence(corners[k], 2, 16, qpm))
-  );
-  const zs = await model.encode(seqs);
-  const arr = await zs.array();
-  zs.dispose();
   return {
-    A: new Float32Array(arr[0]),
-    B: new Float32Array(arr[1]),
-    C: new Float32Array(arr[2]),
-    D: new Float32Array(arr[3]),
+    notes,
+    quantizationInfo: { stepsPerQuarter },
+    totalQuantizedSteps: 16,
+    tempos: [{ qpm: 120 }], // qpm은 크게 중요치 않음(정규화됨)
   };
 }
 
-export async function decodeAtPosition(encodedCorners, x, y, temperature = 1.2) { // 온도를 살짝 높여서 변화를 더 잘보이게 할 수 있습니다.
-  const wA = (1 - x) * (1 - y),
-        wB = x * (1 - y),
-        wC = (1 - x) * y,
-        wD = x * y;
+/** NoteSequence(드럼) → 16스텝 패턴 */
+function nsToPattern(ns) {
+  const out = {};
+  for (const t of TRACKS) out[t] = Array(16).fill(false);
 
-  const zdim = encodedCorners.A.length;
-  const z = new Float32Array(zdim);
-  for (let i = 0; i < zdim; i++) {
-    z[i] =
-      wA * encodedCorners.A[i] +
-      wB * encodedCorners.B[i] +
-      wC * encodedCorners.C[i] +
-      wD * encodedCorners.D[i];
+  const PITCH_TO_TRACK = new Map([
+    [36, 'Kick'],
+    [38, 'Snare'],
+    [42, 'Hat (C)'],
+    [46, 'Hat (O)'],
+    [45, 'Tom (L)'],
+    [47, 'Tom (M)'],
+    [50, 'Tom (H)'],
+    [49, 'Crash'],
+    [51, 'Ride'],
+  ]);
+
+  (ns.notes || []).forEach((n) => {
+    if (!n.isDrum) return;
+    const tr = PITCH_TO_TRACK.get(n.pitch);
+    if (!tr) return;
+    const step = Math.max(0, Math.min(15, n.quantizedStartStep | 0));
+    out[tr][step] = true;
+  });
+
+  return out;
+}
+
+/** 네 코너 패턴을 인코딩(잠복공간 z 벡터 4개 반환) */
+export async function encodeCorners(corners) {
+  const vae = await loadDrumsVAE();
+  const seqs = ['A', 'B', 'C', 'D'].map((k) =>
+    patternToQuantizedNS(corners[k])
+  );
+  // z: tf.Tensor2D shape [4, zDim]
+  const z = await vae.encode(seqs);
+  const zArr = await z.array(); // number[][], 길이=4
+  z.dispose();
+  return zArr; // [{...}x zDim] * 4
+}
+
+/** (x,y)에 해당하는 보간 패턴 디코드 */
+export async function decodeAtPosition(encodedLatents, x, y, opts = {}) {
+  const vae = await loadDrumsVAE();
+  const wA = (1 - x) * (1 - y);
+  const wB = x * (1 - y);
+  const wC = (1 - x) * y;
+  const wD = x * y;
+
+  // encodedLatents: number[][]  (4 x zDim)
+  const zDim = encodedLatents[0].length;
+  const avg = new Array(zDim).fill(0);
+  for (let i = 0; i < zDim; i++) {
+    avg[i] =
+      encodedLatents[0][i] * wA +
+      encodedLatents[1][i] * wB +
+      encodedLatents[2][i] * wC +
+      encodedLatents[3][i] * wD;
   }
 
-  const model = await loadDrumsVAE();
-  const zTensor = tf.tensor2d([Array.from(z)]);
-  const outSeqs = await model.decode(zTensor, temperature);
+  // tf 텐서로 만들어 decode
+  const tf = mm.tf;
+  const zTensor = tf.tensor2d([avg], [1, zDim]);
+  const decoded = await vae.decode(zTensor, opts.temperature ?? 0.5);
   zTensor.dispose();
-  const seq = outSeqs[0];
-  return noteSequenceToPattern(seq, 16);
+
+  const seq = decoded[0];
+  return nsToPattern(seq);
 }

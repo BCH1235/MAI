@@ -1,25 +1,15 @@
 // src/pages/MusicConversion.js
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Box, Container, Paper, Typography } from '@mui/material';
 import MusicNote from '@mui/icons-material/MusicNote';
-import { useNavigate } from 'react-router-dom';
 
 import TransportBar from '../components/beat/TransportBar';
 import BeatGrid from '../components/beat/BeatGrid';
-// import BlendPad from '../components/beat/BlendPad';
-import { createKit } from '../components/beat/SampleKit';
-import { PRESETS, clonePattern, TRACKS } from '../components/beat/presets';
-import { downloadBlob } from '../utils/audioExport';
+import BlendPad from '../components/beat/BlendPad';
+import { createKit, SAMPLE_PATHS } from '../components/beat/SampleKit';
+import { PRESETS, clonePattern } from '../components/beat/presets';
 import { getTone, ensureAudioStart } from '../lib/toneCompat';
-import { useMusicContext } from '../context/MusicContext';
-import { saveBeatItem } from '../services/libraryWriter';
-
-import { BeatPadProvider } from '../state/beatPadStore';
-import PadToolbar from '../components/beat/PadToolbar';
-import BlendPadCanvas from '../components/beat/BlendPadCanvas';
-import BlendPadGhostLayer from '../components/beat/BlendPadGhostLayer';
-import PathOverlay from '../components/beat/PathOverlay';
-import '../styles/beatpad.css';
+import { audioBufferToWav } from '../lib/audioUtils';
 
 const colors = {
   background: '#0A0A0A',
@@ -29,264 +19,305 @@ const colors = {
   text: '#FFFFFF',
   textLight: '#CCCCCC',
   border: '#333333',
+  shadow: 'rgba(80,227,194,0.35)',
 };
 
 const STEPS = 16;
-const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-const blobToDataURL = (blob) =>
-  new Promise((resolve) => {
-    const fr = new FileReader();
-    fr.onloadend = () => resolve(fr.result);
-    fr.readAsDataURL(blob);
-  });
 
 export default function MusicConversion() {
-  const navigate = useNavigate();
-  const { state, actions } = useMusicContext();
-
-  const [pattern, setPattern] = useState(clonePattern(PRESETS['Four on the floor']));
-  const [currentStep, setCurrentStep] = useState(-1);
   const [bpm, setBpm] = useState(96);
-  const [bars, setBars] = useState(2);
-  const [busy, setBusy] = useState(false);
-  const [busyMsg, setBusyMsg] = useState('');
+  const [measures, setMeasures] = useState(1);
+  const [currentStep, setCurrentStep] = useState(0);
+  const [isExporting, setIsExporting] = useState(false);
 
-  const [corners] = useState({
-    A: clonePattern(PRESETS['Rock 1']),
-    B: clonePattern(PRESETS['Pop Punk']),
-    C: clonePattern(PRESETS['Reggaeton']),
-    D: clonePattern(PRESETS['Samba Full Time']),
+  // 초기 패턴
+  const [pattern, setPattern] = useState(clonePattern(PRESETS['Rock 1']));
+  const [corners, setCorners] = useState({
+    A: PRESETS['Rock 1'],
+    B: PRESETS['Pop Punk'],
+    C: PRESETS['Reggaeton'],
+    D: PRESETS['Samba Full Time'],
   });
 
-  const kitRef = useRef(null);
-  const seqRefs = useRef({});
-  const [isKitReady, setIsKitReady] = useState(false);
+  // 오디오 리소스
+  const kitRef = useRef(null);         // { players, gain }
+  const transportIdRef = useRef(null); // scheduleRepeat id
+  const ToneRef = useRef(null);
 
+  // Tone.js + 샘플 로딩
   useEffect(() => {
-    let mounted = true;
-    createKit({ volume: -6 }).then(kit => {
-      if (mounted) {
-        kitRef.current = kit;
-        setIsKitReady(true);
-      }
-    });
+    (async () => {
+      const Tone = await getTone();
+      ToneRef.current = Tone;
+      await ensureAudioStart(Tone);     // 사용자 제스처 뒤 시작 보장
+      kitRef.current = await createKit(); // /public/samples/505/*.mp3 사용
+      Tone.Transport.stop();
+      Tone.Transport.cancel();
+      Tone.Transport.bpm.value = bpm;
+    })();
+
     return () => {
-      mounted = false;
-      kitRef.current?.dispose();
-      Object.values(seqRefs.current).forEach((s) => s?.dispose?.());
+      try {
+        if (ToneRef.current) {
+          ToneRef.current.Transport.stop();
+          ToneRef.current.Transport.cancel();
+        }
+        if (kitRef.current) {
+          kitRef.current.players?.dispose?.();
+          kitRef.current.gain?.dispose?.();
+        }
+      } catch {}
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    async function updateBpm() {
-      const Tone = await getTone();
-      if (Tone?.Transport?.bpm?.value != null) {
-        Tone.Transport.bpm.value = bpm;
-      }
-    }
-    updateBpm();
-  }, [bpm]);
+  // 패드 블렌드 → 그리드 교체
+  const handleBlend = (newPattern) => setPattern(newPattern);
 
-  const onToggle = (track, step) => {
-    setPattern((p) => {
-      const copy = clonePattern(p);
-      copy[track][step] = !copy[track][step];
-      return copy;
+  // 셀 토글
+  const handleToggle = (rowName, stepIdx) => {
+    setPattern(prev => {
+      const next = { ...prev, [rowName]: [...prev[rowName]] };
+      next[rowName][stepIdx] = !next[rowName][stepIdx];
+      return next;
     });
   };
 
-  const stopAll = async () => {
-    const Tone = await getTone();
-    Tone?.Transport?.stop?.();
-    if (Tone?.Transport) Tone.Transport.position = 0;
-    setCurrentStep(-1);
-    Object.values(seqRefs.current).forEach((s) => s?.dispose?.());
-    seqRefs.current = {};
-  };
-
-  const startPlay = async () => {
-    if (!isKitReady) return;
-    const Tone = await getTone();
-    await ensureAudioStart(Tone);
-    await stopAll();
+  // ▶ 재생
+  const handlePlay = async () => {
+    const Tone = ToneRef.current;
     const kit = kitRef.current;
-    if (!kit) return;
+    if (!Tone || !kit) return;
 
-    TRACKS.forEach((t) => {
-      const seq = new Tone.Sequence(
-        (time, i) => {
-          if (pattern[t] && pattern[t][i]) kit.trigger(t, time);
-          Tone.Draw.schedule(() => setCurrentStep(i), time);
-        },
-        Array.from({ length: STEPS }, (_, i) => i),
-        '16n'
-      );
-      seq.start(0);
-      seqRefs.current[t] = seq;
-    });
+    await ensureAudioStart(Tone);
+    Tone.Transport.stop();
+    Tone.Transport.cancel();
+    Tone.Transport.bpm.value = bpm;
+
+    // 내부 키 → Players 키 매핑(일부 축약키 보정)
+    const keyMap = {
+      // 동일
+      kick: 'kick',
+      snare: 'snare',
+      crash: 'crash',
+      ride: 'ride',
+      // 축약/표기 차이 보정
+      'Hat (C)': 'hatC',
+      'Hat (O)': 'hatO',
+      'Tom (L)': 'tomL',
+      'Tom (M)': 'tomM',
+      'Tom (H)': 'tomH',
+      hatC: 'hatC',
+      hatO: 'hatO',
+      tomL: 'tomL',
+      tomM: 'tomM',
+      tomH: 'tomH',
+      hatClose: 'hatC',
+      hatOpen: 'hatO',
+      tomLow: 'tomL',
+      tomMid: 'tomM',
+      tomHigh: 'tomH',
+      Kick: 'kick',
+      Snare: 'snare',
+      Crash: 'crash',
+      Ride: 'ride',
+    };
+
+    // 한 스텝 = 16분음표
+    transportIdRef.current = Tone.Transport.scheduleRepeat((time) => {
+      const step = (Tone.Transport.ticks % (Tone.Time('16n').toTicks() * STEPS)) / Tone.Time('16n').toTicks();
+
+      Object.entries(pattern).forEach(([row, steps]) => {
+        if (steps[Math.floor(step)]) {
+          const k = keyMap[row] || row;
+          try {
+            kit.players.player(k).start(time);
+          } catch {}
+        }
+      });
+
+      // 진행 표시(오디오 스레드 밖)
+      const next = (Math.floor(step) + 1) % STEPS;
+      Tone.Draw.schedule(() => setCurrentStep(next), time);
+    }, '16n');
+
     Tone.Transport.start('+0.03');
   };
 
-  const renderBeatToWavBlob = async () => {
-    if (!isKitReady) return null;
-    setBusy(true);
-    setBusyMsg('녹음 중...');
-    const Tone = await getTone();
-    await ensureAudioStart(Tone);
-    await stopAll();
-    const kit = kitRef.current;
-    if (!kit) return null;
-
-    TRACKS.forEach((t) => {
-      const seq = new Tone.Sequence(
-        (time, i) => { if (pattern[t] && pattern[t][i]) kit.trigger(t, time); },
-        Array.from({ length: STEPS }, (_, i) => i),
-        '16n'
-      );
-      seq.start(0);
-      seqRefs.current[t] = seq;
-    });
-
-    if (Tone?.Transport?.bpm?.value != null) Tone.Transport.bpm.value = bpm;
-
-    const recorder = new Tone.Recorder();
-    Tone.Destination.connect(recorder);
-    recorder.start();
-    Tone.Transport.start('+0.03');
-
-    const secondsPerBeat = 60 / bpm;
-    const totalSec = Math.max(1, bars) * (secondsPerBeat * 4);
-    await wait(totalSec * 1000 + 200);
-
-    const wavBlob = await recorder.stop();
-    Tone.Destination.disconnect(recorder);
-    await stopAll();
-    setBusy(false);
-    setBusyMsg('');
-    return wavBlob;
+  // ⏹ 정지
+  const handleStop = () => {
+    const Tone = ToneRef.current;
+    if (!Tone) return;
+    Tone.Transport.stop();
+    Tone.Transport.cancel();
+    setCurrentStep(0);
   };
 
-  const saveBeatToLibrary = async (wavBlob, titleHint) => {
-    const user = state.auth.user;
-    if (!wavBlob || !user) return false;
+  // 🧹 클리어
+  const handleClear = () => {
+    setPattern(prev => {
+      const cleared = {};
+      Object.keys(prev).forEach(k => (cleared[k] = Array(STEPS).fill(false)));
+      return cleared;
+    });
+    setCurrentStep(0);
+  };
+  // Export the current pattern to a WAV file
+  const handleExport = async () => {
+    const Tone = ToneRef.current;
+    if (!Tone) return;
+
+    setIsExporting(true);
     try {
-      const title = `${titleHint || 'My Beat'}_${bpm}bpm_${Date.now()}`;
-      await saveBeatItem({ ownerId: user.uid, title, bpm, bars, pattern, audioBlob: wavBlob, presetMeta: null });
-      actions.addNotification({ type: 'success', message: '비트가 라이브러리에 저장되었습니다!' });
-      return true;
-    } catch (error) {
-      console.warn('[MusicConversion] save beat error', error);
-      actions.addNotification({ type: 'warning', message: '비트를 저장하지는 못했지만 파일은 준비되었어요.' });
-      return false;
+      const activeMeasures = Math.max(measures, 1);
+      const exportDuration =
+        Tone.Time(`${activeMeasures}m`).toSeconds() + Tone.Time('16n').toSeconds();
+
+      const audioBuffer = await Tone.Offline(async ({ transport }) => {
+        transport.bpm.value = bpm;
+
+        const gain = new Tone.Gain(0.9).toDestination();
+        const players = await new Promise((resolve, reject) => {
+          const inst = new Tone.Players(SAMPLE_PATHS, {
+            onload: () => resolve(inst),
+            onerror: (name) => reject(new Error(`Sample load failed: ${name}`)),
+          }).connect(gain);
+        });
+
+        const keyMap = {
+          kick: 'kick',
+          snare: 'snare',
+          crash: 'crash',
+          ride: 'ride',
+          'Hat (C)': 'hatC',
+          'Hat (O)': 'hatO',
+          'Tom (L)': 'tomL',
+          'Tom (M)': 'tomM',
+          'Tom (H)': 'tomH',
+          hatC: 'hatC',
+          hatO: 'hatO',
+          tomL: 'tomL',
+          tomM: 'tomM',
+          tomH: 'tomH',
+          hatClose: 'hatC',
+          hatOpen: 'hatO',
+          tomLow: 'tomL',
+          tomMid: 'tomM',
+          tomHigh: 'tomH',
+          Kick: 'kick',
+          Snare: 'snare',
+          Crash: 'crash',
+          Ride: 'ride',
+        };
+
+        const stepSeconds = Tone.Time('16n').toSeconds();
+        Object.entries(pattern).forEach(([row, steps]) => {
+          const voice = keyMap[row] || row;
+          let player;
+          try {
+            player = players.player(voice);
+          } catch {
+            player = null;
+          }
+          if (!player) return;
+
+          const rowSteps = Array.isArray(steps) ? steps : Array(STEPS).fill(false);
+          for (let measureIdx = 0; measureIdx < activeMeasures; measureIdx += 1) {
+            rowSteps.forEach((active, stepIdx) => {
+              if (!active) return;
+              const time = (measureIdx * STEPS + stepIdx) * stepSeconds;
+              transport.schedule((scheduledTime) => {
+                try {
+                  player.start(scheduledTime);
+                } catch (err) {
+                  console.warn(`[MusicConversion] Failed to start sample ${voice}`, err);
+                }
+              }, time);
+            });
+          }
+        });
+
+        transport.start(0);
+      }, exportDuration);
+
+      const wavBuffer = audioBufferToWav(audioBuffer);
+      const blob = new Blob([wavBuffer], { type: 'audio/wav' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `beat-${Date.now()}.wav`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('[MusicConversion] Export failed', err);
+      alert('Export failed. Please try again in a moment.');
+    } finally {
+      setIsExporting(false);
     }
-  };
-
-  const exportWav = async () => {
-    const wavBlob = await renderBeatToWavBlob();
-    if (!wavBlob) return;
-    const user = state.auth.user;
-    if (user) {
-      await saveBeatToLibrary(wavBlob, 'Beat');
-    } else {
-      actions.addNotification({ type: 'info', message: '로그인하면 만든 비트를 라이브러리에 저장할 수 있어요.' });
-    }
-    downloadBlob(wavBlob, `my-beat-${bpm}bpm-${bars}bars.wav`);
-  };
-
-  const sendToGenerate = async () => {
-    const wavBlob = await renderBeatToWavBlob();
-    if (wavBlob) {
-      const user = state.auth.user;
-      if (user) await saveBeatToLibrary(wavBlob, 'Beat');
-      setBusy(true);
-      setBusyMsg('보내는 중...');
-      const dataUrl = await blobToDataURL(wavBlob);
-      setBusy(false);
-      setBusyMsg('');
-      sessionStorage.setItem('inlineReferenceAudio', dataUrl);
-      navigate('/generate');
-    }
-  };
-
-  const colorsMemo = useMemo(() => colors, []);
-
-  const onClear = () => {
-    const emptyPattern = {};
-    TRACKS.forEach(track => { emptyPattern[track] = Array(STEPS).fill(false); });
-    setPattern(emptyPattern);
   };
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: colorsMemo.background, py: 6 }}>
-      <Container maxWidth="lg">
-        <Typography
-          variant="h4"
-          sx={{ color: colorsMemo.text, fontWeight: 700, mb: 3, display: 'flex', alignItems: 'center' }}
-        >
-          <MusicNote sx={{ mr: 1, color: colorsMemo.primary }} />
+    <Box sx={{ minHeight: '100vh', bgcolor: colors.background, pt: 4 }}>
+      {/* 폭 확장: lg → xl, 좌우 여백 살짝 */}
+      <Container maxWidth="xl" sx={{ px: { xs: 2, md: 4 } }}>
+        <Typography variant="h4" sx={{ color: colors.text, fontWeight: 800, mb: 2 }}>
+          <MusicNote sx={{ mr: 1, verticalAlign: 'middle', color: colors.accent }} />
           비트 만들기
         </Typography>
 
+        {/* 재생바 */}
+        <Box sx={{ mb: 2 }}>
+          <TransportBar
+            bpm={bpm}
+            bars={measures}
+            onChangeBpm={setBpm}
+            onChangeBars={setMeasures}
+            onPlay={handlePlay}
+            onStop={handleStop}
+            onClear={handleClear}
+            onExport={handleExport}
+            busy={isExporting}
+            busyMsg="Rendering..."
+          />
+        </Box>
+
+        {/* ??? ???? ?? ?????? ?? */}
         <Box
           sx={{
-            display: 'flex',
-            flexDirection: { xs: 'column', md: 'row' },
-            gap: { xs: 3, md: 4 },
+            display: 'grid',
+            gap: { xs: 2, md: 3 },
+            gridTemplateColumns: {
+              xs: '1fr',
+              sm: 'minmax(280px, 360px) minmax(0, 1fr)',
+              lg: 'minmax(320px, 400px) minmax(0, 1fr)',
+            },
             alignItems: 'stretch',
-            flexWrap: { xs: 'wrap', md: 'nowrap' },
           }}
         >
-          {/* 좌: 패드 영역 */}
-          <Box sx={{ flex: { xs: '1 1 100%', md: '0 1 420px', lg: '0 1 460px' }, minWidth: 0 }}>
-            <Paper
-              elevation={0}
-              sx={{
-                bgcolor: colorsMemo.cardBg, p: 3, borderRadius: 3, border: `1px solid ${colorsMemo.border}`,
-                display: 'flex', flexDirection: 'column', height: '100%', minWidth: 0, overflow: 'hidden',
-              }}
-            >
-              <Typography variant="h6" sx={{ color: colorsMemo.text, fontWeight: 600, mb: 2, flexShrink: 0 }}>
-                패드 블렌딩
-              </Typography>
+          <Paper sx={{ p: 2, bgcolor: colors.cardBg, border: `1px solid ${colors.border}`, height: '100%' }}>
+            <BlendPad
+              colors={colors}
+              corners={corners}
+              onChangeCorners={setCorners}
+              onBlend={handleBlend}
+            />
+          </Paper>
 
-              <BeatPadProvider>
-                <PadToolbar
-                  corners={corners}
-                  onApplyPattern={setPattern}
-                />
-                <Box className="pad-stack">
-                  <BlendPadCanvas corners={corners} onDecodedPattern={setPattern} />
-                  <BlendPadGhostLayer corners={corners} />
-                  <PathOverlay />
-                </Box>
-              </BeatPadProvider>
-            </Paper>
-          </Box>
-
-          {/* 우: 시퀀서/컨트롤 */}
-          <Box sx={{ flex: { xs: '1 1 100%', md: '1 1 0%' }, minWidth: 0 }}>
-            <Paper
-              elevation={0}
-              sx={{ bgcolor: colorsMemo.cardBg, p: 3, borderRadius: 3, border: `1px solid ${colorsMemo.border}` }}
-            >
-              <TransportBar
-                bpm={bpm} bars={bars} onChangeBpm={setBpm} onChangeBars={setBars}
-                onPlay={startPlay} onStop={stopAll} onClear={onClear}
-                onExport={exportWav} onSendToGenerate={sendToGenerate}
-                busy={busy || !isKitReady}
-                busyMsg={!isKitReady ? '오디오 샘플 로딩 중...' : busyMsg}
-              />
-
-              <Box sx={{ mt: 3, overflowX: 'auto' }}>
-                <BeatGrid pattern={pattern} currentStep={currentStep} onToggle={onToggle} />
-              </Box>
-
-              <Typography variant="body2" sx={{ mt: 2, color: colorsMemo.textLight }}>
-                팁: 패드의 위치를 바꾸면 4개 코너 프리셋을 섞어 새 패턴이 만들어져요. 그리드에서 직접 찍어도 됩니다.
-              </Typography>
-            </Paper>
-          </Box>
+          <Paper sx={{ p: 2, bgcolor: colors.cardBg, border: `1px solid ${colors.border}`, height: '100%' }}>
+            <BeatGrid
+              pattern={pattern}
+              currentStep={currentStep}
+              onToggle={handleToggle}
+              fullWidth
+              minCell={40}      // ? ?? ?? ??(px)
+              gap={8}           // ?? ?? ??(px)
+              labelWidth={92}   // ?? ??? ??(px)
+            />
+          </Paper>
         </Box>
+
       </Container>
     </Box>
   );

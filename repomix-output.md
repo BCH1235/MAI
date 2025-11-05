@@ -161,15 +161,15 @@ public/logo192.png
 public/logo512.png
 public/manifest.json
 public/robots.txt
-public/samples/crash.mp3
-public/samples/hat-close.mp3
-public/samples/hat-open.mp3
-public/samples/kick.mp3
-public/samples/ride.mp3
-public/samples/snare.mp3
-public/samples/tom-high.mp3
-public/samples/tom-low.mp3
-public/samples/tom-mid.mp3
+public/samples/505/crash.mp3
+public/samples/505/hat-close.mp3
+public/samples/505/hat-open.mp3
+public/samples/505/kick.mp3
+public/samples/505/ride.mp3
+public/samples/505/snare.mp3
+public/samples/505/tom-high.mp3
+public/samples/505/tom-low.mp3
+public/samples/505/tom-mid.mp3
 README.md
 src/App.css
 src/App.js
@@ -182,6 +182,7 @@ src/components/beat/PadToolbar.jsx
 src/components/beat/PathOverlay.jsx
 src/components/beat/presets.js
 src/components/beat/SampleKit.js
+src/components/beat/SimpleBlendPad.jsx
 src/components/beat/TransportBar.jsx
 src/components/common/AudioWaveform.js
 src/components/common/GenreCardSelector.js
@@ -231,6 +232,123 @@ FluidR3_GM 다운 -> C:\soundfonts\FluidR3_GM.sf2
 fluidsynth 다운 https://github.com/FluidSynth/fluidsynth/releases/tag/v2.3.7 
 
 시스템 변수 환경변수 추가 Path->C:\Program Files\fluidsynth\bin
+</file>
+
+<file path="src/components/beat/SimpleBlendPad.jsx">
+// src/components/beat/SimpleBlendPad.jsx
+import React, { useEffect, useRef, useState } from 'react';
+
+export default function SimpleBlendPad({
+  width = 420,
+  height = 420,
+  grid = 16,             // 16x16 격자선
+  initial = { x: 0.5, y: 0.5 },
+  onChange,              // (x01, y01) 콜백
+}) {
+  const canvasRef = useRef(null);
+  const [pos, setPos] = useState(initial);
+  const [dragging, setDragging] = useState(false);
+
+  const draw = () => {
+    const cvs = canvasRef.current;
+    if (!cvs) return;
+    const ctx = cvs.getContext('2d');
+    const w = cvs.width;
+    const h = cvs.height;
+
+    // 배경
+    ctx.clearRect(0, 0, w, h);
+    // 은은한 배경 그라디언트(좌상↔우하)
+    const grad = ctx.createLinearGradient(0, 0, w, h);
+    grad.addColorStop(0, '#111826');  // 좌상
+    grad.addColorStop(1, '#10211e');  // 우하
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+
+    // 격자
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.lineWidth = 1;
+    const stepX = w / grid;
+    const stepY = h / grid;
+    for (let i = 0; i <= grid; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * stepX + 0.5, 0);
+      ctx.lineTo(i * stepX + 0.5, h);
+      ctx.stroke();
+    }
+    for (let j = 0; j <= grid; j++) {
+      ctx.beginPath();
+      ctx.moveTo(0, j * stepY + 0.5);
+      ctx.lineTo(w, j * stepY + 0.5);
+      ctx.stroke();
+    }
+
+    // 퍽
+    const px = pos.x * w;
+    const py = pos.y * h;
+    ctx.beginPath();
+    ctx.arc(px, py, 10, 0, Math.PI * 2);
+    ctx.fillStyle = '#2DD4BF';
+    ctx.fill();
+
+    // 교차선
+    ctx.strokeStyle = 'rgba(45, 212, 191, 0.25)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(px, 0);
+    ctx.lineTo(px, h);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, py);
+    ctx.lineTo(w, py);
+    ctx.stroke();
+  };
+
+  useEffect(draw, [pos, width, height, grid]);
+
+  const getXY01 = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1);
+    const y = Math.min(Math.max((e.clientY - rect.top) / rect.height, 0), 1);
+    return { x, y };
+  };
+
+  const start = (e) => {
+    setDragging(true);
+    const p = getXY01(e);
+    setPos(p);
+    onChange?.(p.x, p.y);
+  };
+  const move = (e) => {
+    if (!dragging) return;
+    const p = getXY01(e);
+    setPos(p);
+    onChange?.(p.x, p.y);
+  };
+  const end = () => setDragging(false);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={width}
+      height={height}
+      style={{
+        width,
+        height,
+        borderRadius: 16,
+        border: '1px solid #333',
+        display: 'block',
+        background: '#0b0b0b',
+        boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.02)',
+        cursor: 'crosshair',
+      }}
+      onMouseDown={start}
+      onMouseMove={move}
+      onMouseUp={end}
+      onMouseLeave={end}
+    />
+  );
+}
 </file>
 
 <file path=".env.example">
@@ -1535,9 +1653,10 @@ export default function BeatGrid({ pattern, currentStep, onToggle }) {
 </file>
 
 <file path="src/components/beat/BlendPad.jsx">
-import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+// src/components/beat/BlendPad.jsx
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Typography, FormControl, Select, MenuItem, Stack } from '@mui/material';
-import { PRESETS, clonePattern, TRACKS } from './presets';
+import { PRESETS, TRACKS } from './presets';
 import { loadDrumsVAE, encodeCorners, decodeAtPosition } from '../../lib/drumsVAE';
 
 const weights = (x, y) => ({
@@ -1547,428 +1666,199 @@ const weights = (x, y) => ({
   D: x * y,
 });
 
+// 단순 가중합 블렌딩(모델 실패 시 대비)
 function blendPatterns(corners, x, y, thresh = 0.5) {
   const w = weights(x, y);
   const out = {};
-  TRACKS.forEach((trackName) => {
-    out[trackName] = Array.from({ length: 16 }, (_, i) => {
-      const valA = corners.A?.[trackName]?.[i] ? 1 : 0;
-      const valB = corners.B?.[trackName]?.[i] ? 1 : 0;
-      const valC = corners.C?.[trackName]?.[i] ? 1 : 0;
-      const valD = corners.D?.[trackName]?.[i] ? 1 : 0;
-      const v = w.A * valA + w.B * valB + w.C * valC + w.D * valD;
+  TRACKS.forEach((track) => {
+    out[track] = Array.from({ length: 16 }, (_, i) => {
+      const v =
+        (corners.A?.[track]?.[i] ? 1 : 0) * w.A +
+        (corners.B?.[track]?.[i] ? 1 : 0) * w.B +
+        (corners.C?.[track]?.[i] ? 1 : 0) * w.C +
+        (corners.D?.[track]?.[i] ? 1 : 0) * w.D;
       return v >= thresh;
     });
   });
   return out;
 }
 
-function useDebouncedCallback(fn, delay = 120) {
-  const tRef = useRef(null);
-  return (...args) => {
-    if (tRef.current) clearTimeout(tRef.current);
-    tRef.current = setTimeout(() => fn(...args), delay);
-  };
-}
-
 export default function BlendPad({ colors, corners, onChangeCorners, onBlend }) {
   const padRef = useRef(null);
-  const [pos, setPos] = useState({ x: 0.2, y: 0.3 });
-  const [dragging, setDragging] = useState(false);
+  const [pos, setPos] = useState({ x: 0.25, y: 0.25 });
   const [sel, setSel] = useState({
     A: 'Rock 1',
     B: 'Pop Punk',
     C: 'Reggaeton',
     D: 'Samba Full Time',
   });
+
   const presetNames = useMemo(() => Object.keys(PRESETS), []);
 
   const [modelReady, setModelReady] = useState(false);
-  const [encoded, setEncoded] = useState(null);
-  const [decoding, setDecoding] = useState(false);
+  const encodedRef = useRef(null);
+  const decBusyRef = useRef(false);
 
+  // VAE 준비
   useEffect(() => {
-    let mounted = true;
     (async () => {
       try {
         await loadDrumsVAE();
-        if (mounted) setModelReady(true);
+        setModelReady(true);
       } catch (e) {
-        console.warn('[BlendPad] VAE 로딩 실패, 단순 블렌딩으로 전환합니다.', e);
-        if (mounted) {
-          setModelReady(false);
-        }
+        console.warn('[BlendPad] VAE 로딩 실패 → 단순 블렌딩으로 동작합니다.', e);
+        setModelReady(false);
       }
     })();
-    return () => {
-      mounted = false;
-    };
   }, []);
 
+  // 코너 프리셋 셀렉터 → corners 변경
   useEffect(() => {
-    if (!modelReady) return;
+    const next = {
+      A: PRESETS[sel.A],
+      B: PRESETS[sel.B],
+      C: PRESETS[sel.C],
+      D: PRESETS[sel.D],
+    };
+    onChangeCorners?.(next);
+  }, [sel, onChangeCorners]);
+
+  // corners 바뀌면 잠복공간 인코딩
+  useEffect(() => {
     let cancelled = false;
     (async () => {
+      if (!modelReady || !corners) return;
       try {
         const enc = await encodeCorners(corners);
-        if (!cancelled) setEncoded(enc);
+        if (!cancelled) encodedRef.current = enc;
       } catch (e) {
-        console.warn('[BlendPad] 인코딩 실패, 단순 블렌딩으로 전환합니다.', e);
-        if (!cancelled) {
-          setEncoded(null);
-        }
+        console.warn('[BlendPad] encodeCorners 실패', e);
+        encodedRef.current = null;
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [corners, modelReady]);
+  }, [modelReady, corners]);
 
-  const getXY = useCallback(
-    (clientX, clientY) => {
-      const el = padRef.current;
-      if (!el) return null;
-      const r = el.getBoundingClientRect();
-      const x = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
-      const y = Math.min(1, Math.max(0, (clientY - r.top) / r.height));
-      return { x, y };
-    },
-    [padRef]
-  );
-
-  const debouncedDecode = useDebouncedCallback(async (p) => {
-    if (!modelReady || !encoded) return;
-    setDecoding(true);
-    try {
-      const pat = await decodeAtPosition(encoded, p.x, p.y, 0.85);
-      onBlend(pat);
-    } catch (e) {
-      onBlend(blendPatterns(corners, p.x, p.y));
-    } finally {
-      setDecoding(false);
-    }
-  }, 120);
-
-  const handleInteraction = useCallback(
-    (e) => {
-      const p = getXY(e.clientX, e.clientY);
-      if (!p) return;
-      setPos(p);
-      if (modelReady && encoded) {
-        debouncedDecode(p);
-      } else {
-        onBlend(blendPatterns(corners, p.x, p.y));
-      }
-    },
-    [modelReady, encoded, corners, onBlend, debouncedDecode, getXY]
-  );
-
-  const startDrag = (e) => {
-    setDragging(true);
-    handleInteraction(e);
+  // 드래그/클릭 핸들러
+  const to01 = (e) => {
+    const r = padRef.current.getBoundingClientRect();
+    const px = e.clientX ?? (e.touches && e.touches[0]?.clientX);
+    const py = e.clientY ?? (e.touches && e.touches[0]?.clientY);
+    const x = Math.max(0, Math.min(1, (px - r.left) / r.width));
+    const y = Math.max(0, Math.min(1, (py - r.top) / r.height));
+    return { x, y };
   };
 
-  useEffect(() => {
-    const onMove = (e) => {
-      if (!dragging) return;
-      handleInteraction(e);
-    };
-    const onUp = () => setDragging(false);
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-  }, [dragging, handleInteraction]);
+  const triggerDecode = async (xy) => {
+    // 동시 호출 방지
+    if (decBusyRef.current) return;
+    decBusyRef.current = true;
 
-  const handlePreset = (key, name) => {
-    if (!name) return;
-    const next = { ...corners, [key]: clonePattern(PRESETS[name]) };
-    onChangeCorners(next);
-    setSel((s) => ({ ...s, [key]: name }));
-    const p = pos;
-    onBlend(blendPatterns(next, p.x, p.y));
+    try {
+      let newPattern;
+      if (modelReady && encodedRef.current) {
+        newPattern = await decodeAtPosition(encodedRef.current, xy.x, xy.y, { temperature: 0.5 });
+      } else {
+        newPattern = blendPatterns(corners, xy.x, xy.y);
+      }
+      onBlend?.(newPattern);
+    } catch (e) {
+      console.warn('[BlendPad] decode 실패 → 단순 블렌딩', e);
+      onBlend?.(blendPatterns(corners, xy.x, xy.y));
+    } finally {
+      decBusyRef.current = false;
+    }
+  };
+
+  const onPointer = (e) => {
+    const xy = to01(e);
+    setPos(xy);
+    triggerDecode(xy);
   };
 
   return (
-    <Stack
-      spacing={2}
-      sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}
-    >
-      <Box
-        ref={padRef}
-        onMouseDown={startDrag}
-        sx={{
-          position: 'relative',
-          width: '100%',
-          aspectRatio: '1 / 1',
-          flex: '0 0 auto',
-          borderRadius: 2,
-          border: `1px solid ${colors.border}`,
-          background:
-            'linear-gradient(to bottom right, #a7b0fb, #e481f8, #a5f9d1, #ccf799)',
-          overflow: 'hidden',
-          userSelect: 'none',
-          cursor: 'pointer',
-          flexShrink: 0,
-        }}
-        title="드래그해서 블렌딩"
-      >
-        <Box
-          sx={{
-            position: 'absolute',
-            inset: 0,
-            backgroundImage:
-              'linear-gradient(rgba(255,255,255,0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.07) 1px, transparent 1px)',
-            backgroundSize: '20px 20px',
-            pointerEvents: 'none',
-          }}
-        />
-        <CornerLabel pos="topLeft" label="A" colors={colors} />
-        <CornerLabel pos="topRight" label="B" colors={colors} />
-        <CornerLabel pos="bottomLeft" label="C" colors={colors} />
-        <CornerLabel pos="bottomRight" label="D" colors={colors} />
-        <Box
-          sx={{
-            position: 'absolute',
-            width: 24,
-            height: 24,
-            borderRadius: '50%',
-            border: '2px solid white',
-            background: 'transparent',
-            left: `calc(${pos.x * 100}% - 12px)`,
-            top: `calc(${pos.y * 100}% - 12px)`,
-            boxShadow: dragging
-              ? `0 0 25px rgba(255,255,255,0.8)`
-              : `0 0 15px rgba(0,0,0,0.5)`,
-            transition: 'box-shadow 0.2s ease-in-out',
-            pointerEvents: 'none',
-          }}
-        />
-        {decoding && (
-          <Box
-            sx={{
-              position: 'absolute',
-              right: 8,
-              bottom: 8,
-              fontSize: 12,
-              color: colors.text,
-              bgcolor: 'rgba(0,0,0,.4)',
-              border: `1px solid ${colors.border}`,
-              borderRadius: 1,
-              px: 1,
-              py: 0.25,
-            }}
-          >
-            AI 계산 중...
-          </Box>
-        )}
-      </Box>
-      <Box
-        sx={{
-          display: 'grid',
-          gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
-          gap: 2,
-          mt: 'auto',
-          minWidth: 0,
-          '& .MuiFormControl-root': { minWidth: 0 },
-          '& .MuiFilledInput-root': { minWidth: 0, overflow: 'hidden' },
-          '& .MuiSelect-select': {
-            display: 'block',
-            width: '100%',
-            minWidth: 0,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            pr: 4,
-          },
-        }}
-      >
-        {['A', 'B', 'C', 'D'].map((k) => (
-          <FormControl
-            key={k}
-            fullWidth
-            variant="filled"
-            size="small"
-            sx={{ bgcolor: '#222', borderRadius: 1, minWidth: 0 }}
-          >
-            <Typography sx={{ color: colors.textLight, fontSize: 12, mb: 0.5, mx: 1, mt: 1 }}>
-              Corner {k}
-            </Typography>
+    <Box sx={{ p: 2 }}>
+      <Typography variant="h6" sx={{ color: colors.text, mb: 1 }}>
+        패드 블렌딩
+      </Typography>
+
+      {/* 코너 프리셋 선택 */}
+      <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
+        {(['A', 'B', 'C', 'D']).map((k) => (
+          <FormControl key={k} size="small" sx={{ minWidth: 140 }}>
             <Select
-              value={sel[k] || ''}
-              onChange={(e) => handlePreset(k, e.target.value)}
-              renderValue={(value) => (
-                <Typography
-                  component="span"
-                  sx={{
-                    display: 'block',
-                    width: '100%',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    color: colors.text,
-                  }}
-                >
-                  {value || 'Preset 선택'}
-                </Typography>
-              )}
-              displayEmpty
-              fullWidth
-              sx={{ color: colors.text, minWidth: 0 }}
-              MenuProps={{ PaperProps: { sx: { bgcolor: '#333', color: colors.text } } }}
+              value={sel[k]}
+              onChange={(e) => setSel((prev) => ({ ...prev, [k]: e.target.value }))}
+              sx={{ color: colors.text, bgcolor: colors.cardBg, border: `1px solid ${colors.border}` }}
             >
               {presetNames.map((name) => (
-                <MenuItem key={name} value={name}>
-                  {name}
-                </MenuItem>
+                <MenuItem key={name} value={name}>{name}</MenuItem>
               ))}
             </Select>
           </FormControl>
         ))}
+      </Stack>
+
+      {/* 패드 영역 */}
+      <Box
+        ref={padRef}
+        onMouseDown={onPointer}
+        onMouseMove={(e) => e.buttons === 1 && onPointer(e)}
+        onTouchStart={onPointer}
+        onTouchMove={onPointer}
+        sx={{
+          position: 'relative',
+          width: '100%',
+          aspectRatio: '1 / 1',
+          borderRadius: 2,
+          border: `1px solid ${colors.border}`,
+          backgroundImage:
+            'linear-gradient(to right, rgba(255,255,255,0.06) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.06) 1px, transparent 1px)',
+          backgroundSize: '10% 100%, 100% 10%',
+          backgroundColor: colors.cardBg,
+          cursor: 'crosshair',
+          mb: 1.5,
+        }}
+      >
+        {/* 포인터 */}
+        <Box
+          sx={{
+            position: 'absolute',
+            left: `calc(${pos.x * 100}% - 8px)`,
+            top: `calc(${pos.y * 100}% - 8px)`,
+            width: 16,
+            height: 16,
+            borderRadius: 999,
+            backgroundColor: colors.accent,
+            boxShadow: `0 0 10px ${colors.shadow}`,
+            pointerEvents: 'none',
+          }}
+        />
+        {/* 코너 라벨 */}
+        <CornerLabel label={`A: ${sel.A}`} pos={{ left: 8, top: 8 }} />
+        <CornerLabel label={`B: ${sel.B}`} pos={{ right: 8, top: 8 }} />
+        <CornerLabel label={`C: ${sel.C}`} pos={{ left: 8, bottom: 8 }} />
+        <CornerLabel label={`D: ${sel.D}`} pos={{ right: 8, bottom: 8 }} />
       </Box>
-    </Stack>
+    </Box>
   );
 }
 
-function CornerLabel({ pos, label, colors }) {
-  const style = {
-    position: 'absolute',
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: 'bold',
-    px: 1,
-    py: 0.25,
-    borderRadius: 1,
-    bgcolor: 'rgba(0,0,0,.35)',
-    border: `1px solid rgba(255,255,255,0.2)`,
-  };
-  const map = {
-    topLeft: { left: 12, top: 10 },
-    topRight: { right: 12, top: 10 },
-    bottomLeft: { left: 12, bottom: 10 },
-    bottomRight: { right: 12, bottom: 10 },
-  };
-  return <Box sx={{ ...style, ...map[pos] }}>{label}</Box>;
-}
-</file>
-
-<file path="src/components/beat/BlendPadCanvas.jsx">
-import React, { useRef, useState } from "react";
-import { useBeatPad } from "../../state/beatPadStore";
-import { useCellGrid } from "../../hooks/useCellGrid";
-import { cellCache } from "../../lib/beatblender/cellCache";
-import { encodeCorners, decodeAtPosition } from "../../lib/drumsVAE";
-
-export default function BlendPadCanvas({ corners, onDecodedPattern }) {
-  const ref = useRef(null);
-  const { state, dispatch } = useBeatPad();
-  const { toCell, centerOf } = useCellGrid(state.grid.cols, state.grid.rows);
-  const [dragging, setDragging] = useState(false);
-  const lastIndexRef = useRef(-1);
-  const lastPathPointRef = useRef({ x: -1, y: -1 });
-
-  const getXY01 = (e) => {
-    const r = ref.current.getBoundingClientRect();
-    const p = "touches" in e ? e.touches[0] : e;
-    const x = (p.clientX - r.left) / r.width;
-    const y = (p.clientY - r.top) / r.height;
-    return { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) };
-  };
-
-  const ensureEncodings = async () => {
-    if (state.cornerEncodings) return state.cornerEncodings;
-    if (!corners) return null;
-    const enc = await encodeCorners(corners);
-    dispatch({ type: "SET_CORNERS", encodings: enc });
-    return enc;
-  };
-
-  const ensureDecoded = async (cell) => {
-    const idx = cell.index;
-    let pattern = cellCache.get(state.cellCacheVersion, idx);
-    if (pattern) return pattern;
-
-    const enc = await ensureEncodings();
-    if (!enc) return null;
-
-    const { x, y } = centerOf(cell);
-    pattern = await decodeAtPosition(enc, x, y, 1.1);
-    if (pattern) cellCache.set(state.cellCacheVersion, idx, pattern);
-    return pattern;
-  };
-
-  // 셀 모드: 스냅된 셀마다 즉시 디코드
-  const applyAtEventCellMode = async (e) => {
-    const { x, y } = getXY01(e);
-    const cell = toCell(x, y);
-    dispatch({ type: "SELECT_CELL", cell });
-
-    if (cell.index === lastIndexRef.current) return;
-    lastIndexRef.current = cell.index;
-
-    const pattern = await ensureDecoded(cell);
-    if (pattern && onDecodedPattern) onDecodedPattern(pattern);
-  };
-
-  // 그리기 모드: 경로 수집(중복/초근접 점은 무시)
-  const pushPathPoint = (x, y) => {
-    const prev = lastPathPointRef.current;
-    const dx = x - prev.x, dy = y - prev.y;
-    if (prev.x < 0 || Math.hypot(dx, dy) > 0.01) { // 1% 이상 이동 시만 샘플
-      dispatch({ type: "APPEND_PATH_POINT", point: { x, y } });
-      lastPathPointRef.current = { x, y };
-    }
-  };
-
-  const onDown = (e) => {
-    setDragging(true);
-    lastIndexRef.current = -1;
-    lastPathPointRef.current = { x: -1, y: -1 };
-
-    if (state.mode === "CELL") {
-      applyAtEventCellMode(e);
-    } else {
-      const { x, y } = getXY01(e);
-      // 새 경로 시작: 기존 경로 지우고 첫 점 push
-      dispatch({ type: "RESET_PATH" });
-      dispatch({ type: "APPEND_PATH_POINT", point: { x, y } });
-      lastPathPointRef.current = { x, y };
-      
-    }
-
-    window.addEventListener("mousemove", onMove, { passive: true });
-    window.addEventListener("mouseup", onUp);
-    window.addEventListener("touchmove", onMove, { passive: true });
-    window.addEventListener("touchend", onUp);
-  };
-
-  const onMove = (e) => {
-    if (!dragging) return;
-    if (state.mode === "CELL") {
-      applyAtEventCellMode(e);
-    } else {
-      const { x, y } = getXY01(e);
-      pushPathPoint(x, y);
-    }
-  };
-
-  const onUp = () => {
-    setDragging(false);
-    window.removeEventListener("mousemove", onMove);
-    window.removeEventListener("mouseup", onUp);
-    window.removeEventListener("touchmove", onMove);
-    window.removeEventListener("touchend", onUp);
-  };
-
+function CornerLabel({ label, pos }) {
   return (
-    <canvas
-      ref={ref}
-      className="blendpad-canvas"
-      onMouseDown={onDown}
-      onTouchStart={onDown}
-    />
+    <Box
+      sx={{
+        position: 'absolute',
+        fontSize: 12,
+        color: '#9aa7b3',
+        opacity: 0.9,
+        ...pos,
+      }}
+    >
+      {label}
+    </Box>
   );
 }
 </file>
@@ -2165,68 +2055,6 @@ export default function PadToolbar({ corners, onApplyPattern }) {
 }
 </file>
 
-<file path="src/components/beat/PathOverlay.jsx">
-import React, { useEffect, useRef } from "react";
-import { useBeatPad } from "../../state/beatPadStore";
-
-export default function PathOverlay() {
-  const ref = useRef(null);
-  const { state } = useBeatPad();
-
-  useEffect(() => {
-    const cvs = ref.current;
-    if (!cvs) return;
-    const ctx = cvs.getContext("2d");
-    const ro = new ResizeObserver(() => {
-      const { clientWidth: w, clientHeight: h } = cvs;
-      if (cvs.width !== w || cvs.height !== h) {
-        cvs.width = w || 1;
-        cvs.height = h || 1;
-      }
-      draw();
-    });
-    ro.observe(cvs);
-    return () => ro.disconnect();
-    // eslint-disable-next-line
-  }, []);
-
-  useEffect(() => { draw(); /* path 바뀌면 다시 그림 */ }, [state.path, state.mode, state.interpolating]);
-
-  const draw = () => {
-    const cvs = ref.current; if (!cvs) return;
-    const ctx = cvs.getContext("2d");
-    const w = cvs.width, h = cvs.height;
-    ctx.clearRect(0, 0, w, h);
-
-    if (!state.path?.length) return;
-
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = "rgba(80, 227, 194, 0.9)";
-    ctx.fillStyle = "rgba(80, 227, 194, 0.25)";
-
-    // 라인
-    ctx.beginPath();
-    for (let i = 0; i < state.path.length; i++) {
-      const p = state.path[i];
-      const x = p.x * w, y = p.y * h;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-
-    // 포인트(조그만 점)
-    for (let i = 0; i < state.path.length; i += 4) {
-      const p = state.path[i];
-      ctx.beginPath();
-      ctx.arc(p.x * w, p.y * h, 3, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  };
-
-  return <canvas ref={ref} className="path-overlay" />;
-}
-</file>
-
 <file path="src/components/beat/presets.js">
 // src/components/beat/presets.js
 
@@ -2303,60 +2131,34 @@ export const clonePattern = (p) => {
 
 <file path="src/components/beat/SampleKit.js">
 // src/components/beat/SampleKit.js
+import * as Tone from 'tone';
 
-import { getTone } from '../../lib/toneCompat';
+// CRA(react-scripts)에서 public 폴더는 루트로 서비스됨
+const BASE = (process.env.PUBLIC_URL || '') + '/samples/505/';
 
-// 우리가 public/samples/ 폴더에 넣은 9가지 드럼 악기 이름과 파일 경로를 정확하게 적어줍니다.
-const DRUM_SAMPLES = {
-  'kick': '/samples/kick.mp3',
-  'snare': '/samples/snare.mp3',
-  'hatClose': '/samples/hat-close.mp3', // presets.js와 이름 통일!
-  'hatOpen': '/samples/hat-open.mp3',
-  'tomLow': '/samples/tom-low.mp3',
-  'tomMid': '/samples/tom-mid.mp3',
-  'tomHigh': '/samples/tom-high.mp3',
-  'crash': '/samples/crash.mp3',
-  'ride': '/samples/ride.mp3',
+const SAMPLE_PATHS = {
+  kick:  `${BASE}kick.mp3`,
+  snare: `${BASE}snare.mp3`,
+  hatC:  `${BASE}hat-close.mp3`, // 네 파일명에 맞춤
+  hatO:  `${BASE}hat-open.mp3`,
+  tomL:  `${BASE}tom-low.mp3`,
+  tomM:  `${BASE}tom-mid.mp3`,
+  tomH:  `${BASE}tom-high.mp3`,
+  crash: `${BASE}crash.mp3`,
+  ride:  `${BASE}ride.mp3`,
 };
 
-// dB 값을 gain 값으로 변환하는 함수 (볼륨 조절용)
-const dbToGain = (db) => Math.pow(10, db / 20);
+export async function createKit() {
+  await Tone.start();
+  const gain = new Tone.Gain(0.9).toDestination();
 
-export async function createKit({ volume = -6 } = {}) {
-  const Tone = await getTone();
-
-  // 모든 소리가 거쳐갈 마스터 볼륨 조절 장치
-  const master = new Tone.Gain(dbToGain(volume)).toDestination();
-
-  // Tone.Players는 여러 오디오 파일을 한 번에 관리하는 편리한 도구입니다.
-  // 우리가 정의한 DRUM_SAMPLES를 통째로 넘겨주면 알아서 다 불러옵니다.
-  const players = new Tone.Players(DRUM_SAMPLES, () => {
-    console.log('✅ 9가지 드럼 샘플이 모두 준비되었습니다!');
-  }).connect(master);
-
-  // 이제 trigger 함수는 훨씬 간단해집니다.
-  return {
-    trigger(track, time) {
-      // players 객체가 'kick', 'snare' 같은 이름을 가지고 있는지 확인하고,
-      if (players.has(track)) {
-        // 해당 이름의 플레이어를 찾아 재생시킵니다.
-        players.player(track).start(time);
-      } else {
-        // 혹시 모를 오류를 방지하기 위해 콘솔에 경고를 남깁니다.
-        console.warn(`'${track}'이라는 이름의 샘플을 찾을 수 없습니다.`);
-      }
-    },
-    dispose() {
-      // 뒷정리도 깔끔하게!
-      try { 
-        players.dispose?.(); 
-        master.dispose?.();
-      } catch {}
-    },
-  };
+  return new Promise((resolve, reject) => {
+    const players = new Tone.Players(SAMPLE_PATHS, {
+      onload: () => resolve({ players, gain }),
+      onerror: (name) => reject(new Error(`Sample load failed: ${name}`)),
+    }).connect(gain);
+  });
 }
-
-export default createKit;
 </file>
 
 <file path="src/components/beat/TransportBar.jsx">
@@ -3547,119 +3349,112 @@ export function drawMiniPattern(ctx, x, y, w, h, pattern, opts = {}) {
 </file>
 
 <file path="src/lib/drumsVAE.js">
+// src/lib/drumsVAE.js
 import * as tf from '@tensorflow/tfjs';
 import { loadMagenta } from './magentaCompat';
 import { TRACKS } from '../components/beat/presets';
 
+// Magenta 공개 체크포인트 (드럼 VAE)
 const CHECKPOINT =
-  'https://storage.googleapis.com/magentadata/js/checkpoints/music_vae/drums_2bar_lokl_small';
+  'https://storage.googleapis.com/magentadata/js/checkpoints/music_vae/drums_kit_hq';
 
-let vae = null;
-let ready = false;
+let _mm = null;
+let _model = null;
 
 const DRUM_PITCH_MAP = {
-  'kick': 36, 
-  'snare': 38, 
-  'hatClose': 42, 
-  'hatOpen': 46,
-  'tomLow': 45, 
-  'tomMid': 48, 
-  'tomHigh': 50,
-  'crash': 49, 
-  'ride': 51
+  kick: 36,
+  snare: 38,
+  hatClose: 42,
+  hatOpen: 46,
+  tomLow: 45,
+  tomMid: 47,
+  tomHigh: 50,
+  crash: 49,
+  ride: 51,
 };
-const PITCH_DRUM_MAP = Object.fromEntries(Object.entries(DRUM_PITCH_MAP).map(a => [a[1], a[0]]));
 
-export async function loadDrumsVAE(checkpointUrl = CHECKPOINT) {
-  if (vae && ready) return vae;
-  const { MusicVAE } = await loadMagenta();
-  vae = new MusicVAE(checkpointUrl);
-  await vae.initialize();
-  ready = true;
-  return vae;
+// VAE 로드
+export async function loadDrumsVAE() {
+  if (_model) return _model;
+  await loadMagenta();
+
+  _mm = window.mm || (await import('@magenta/music'));
+  _model = new _mm.MusicVAE(CHECKPOINT);
+  await _model.initialize();
+  return _model;
 }
 
-export async function patternToNoteSequence(pattern, bars = 2, stepsPerBar = 16, qpm = 120) {
-  const { sequences } = await loadMagenta();
-  const total = bars * stepsPerBar;
-  const seq = sequences.createQuantizedNoteSequence(4);
-  seq.tempos = [{ qpm }];
-
-  for (const trackName of TRACKS) {
-    const pitch = DRUM_PITCH_MAP[trackName];
-    if (pattern && pattern[trackName]) {
-      const arr = pattern[trackName];
-      for (let b = 0; b < bars; b++) {
-        for (let i = 0; i < stepsPerBar; i++) {
-          if (arr[i]) {
-            const step = b * stepsPerBar + i;
-            seq.notes.push({
-              pitch,
-              quantizedStartStep: step,
-              quantizedEndStep: step + 1,
-              isDrum: true,
-              velocity: 100,
-            });
-          }
-        }
+// 앱의 pattern 객체 -> Magenta NoteSequence
+export function patternToNoteSequence(pattern) {
+  const notes = [];
+  TRACKS.forEach((name) => {
+    const row = pattern[name] || [];
+    row.forEach((on, step) => {
+      if (on) {
+        notes.push({
+          pitch: DRUM_PITCH_MAP[name],
+          quantizedStartStep: step,
+          quantizedEndStep: step + 1,
+        });
       }
-    }
-  }
-  seq.totalQuantizedSteps = total;
-  return seq;
-}
-
-export function noteSequenceToPattern(seq, stepsOut = 16) {
-  const pat = {};
-  TRACKS.forEach(t => pat[t] = Array(stepsOut).fill(false));
-  for (const n of seq.notes || []) {
-    if (!n.isDrum) continue;
-    const trackName = PITCH_DRUM_MAP[n.pitch];
-    if (!trackName) continue;
-    const step = (n.quantizedStartStep || 0) % stepsOut;
-    pat[trackName][step] = true;
-  }
-  return pat;
-}
-
-export async function encodeCorners(corners, qpm = 120) {
-  const model = await loadDrumsVAE();
-  const seqs = await Promise.all(
-    ['A','B','C','D'].map((k) => patternToNoteSequence(corners[k], 2, 16, qpm))
-  );
-  const zs = await model.encode(seqs);
-  const arr = await zs.array();
-  zs.dispose();
+    });
+  });
   return {
-    A: new Float32Array(arr[0]),
-    B: new Float32Array(arr[1]),
-    C: new Float32Array(arr[2]),
-    D: new Float32Array(arr[3]),
+    notes,
+    quantizationInfo: { stepsPerQuarter: 4 },
+    totalQuantizedSteps: 16,
   };
 }
 
-export async function decodeAtPosition(encodedCorners, x, y, temperature = 1.2) { // 온도를 살짝 높여서 변화를 더 잘보이게 할 수 있습니다.
-  const wA = (1 - x) * (1 - y),
-        wB = x * (1 - y),
-        wC = (1 - x) * y,
-        wD = x * y;
+// NoteSequence -> 앱의 pattern 객체
+export function noteSequenceToPattern(ns) {
+  const out = {};
+  TRACKS.forEach((n) => (out[n] = Array(16).fill(false)));
+  (ns.notes || []).forEach((n) => {
+    const step = Math.max(0, Math.min(15, n.quantizedStartStep || 0));
+    const name = Object.keys(DRUM_PITCH_MAP).find(
+      (k) => DRUM_PITCH_MAP[k] === n.pitch
+    );
+    if (name) out[name][step] = true;
+  });
+  return out;
+}
 
-  const zdim = encodedCorners.A.length;
-  const z = new Float32Array(zdim);
-  for (let i = 0; i < zdim; i++) {
-    z[i] =
-      wA * encodedCorners.A[i] +
-      wB * encodedCorners.B[i] +
-      wC * encodedCorners.C[i] +
-      wD * encodedCorners.D[i];
+// 4개 코너 프리셋을 잠복 공간으로 인코딩
+export async function encodeCorners(corners) {
+  const model = await loadDrumsVAE();
+  const seqs = ['A', 'B', 'C', 'D'].map((k) =>
+    patternToNoteSequence(corners[k])
+  );
+  const z = await model.encode(seqs);
+  // TF Tensor -> number[] 로 빼두면 decode 시 재사용이 빠름
+  const arr = z.arraySync();
+  z.dispose && z.dispose();
+  return arr;
+}
+
+// (x,y)∈[0,1]에서 4코너를 양선형 보간해 디코드
+export async function decodeAtPosition(encodedCorners, x, y, opts = {}) {
+  const { temperature = 0.5 } = opts;
+  const model = await loadDrumsVAE();
+  const [A, B, C, D] = encodedCorners;
+  const wA = (1 - x) * (1 - y);
+  const wB = x * (1 - y);
+  const wC = (1 - x) * y;
+  const wD = x * y;
+
+  // z = A*wA + B*wB + C*wC + D*wD
+  const dim = A.length;
+  const zArr = new Array(dim);
+  for (let i = 0; i < dim; i++) {
+    zArr[i] = A[i] * wA + B[i] * wB + C[i] * wC + D[i] * wD;
   }
 
-  const model = await loadDrumsVAE();
-  const zTensor = tf.tensor2d([Array.from(z)]);
-  const outSeqs = await model.decode(zTensor, temperature);
-  zTensor.dispose();
-  const seq = outSeqs[0];
-  return noteSequenceToPattern(seq, 16);
+  const z = tf.tensor2d([zArr]);
+  const [seq] = await model.decode(z, temperature);
+  z.dispose && z.dispose();
+
+  return noteSequenceToPattern(seq);
 }
 </file>
 
@@ -3701,69 +3496,24 @@ export default app;
 
 <file path="src/lib/toneCompat.js">
 // src/lib/toneCompat.js
-// Tone.js v14.x 전체 호환 래퍼 (ESM/UMD/전역 모두 대응, ESLint no-undef 안전)
+let toneModulePromise;
 
-// 1) 사이드 이펙트로만 로드 (내보내기 기대하지 않음)
-import "tone";
+/** Tone.js를 동적으로 로드 (v14는 default export 없음) */
+export async function getTone() {
+  if (!toneModulePromise) {
+    toneModulePromise = import('tone'); // <- 항상 모듈 네임스페이스 객체를 받음
+  }
+  return toneModulePromise;
+}
 
-// 2) 전역에서 Tone 네임스페이스 확보 (globalThis 대신 window/global 폴백)
-const _root =
-  (typeof window !== "undefined" && window) ||
-  (typeof global !== "undefined" && global) ||
-  {};
-const Tone = _root.Tone;
-
-// 기존 코드 호환: getTone / Tone export
-export const getTone = () => Tone;
-export { Tone };
-
-// 오디오 시작 (사용자 제스처 이후 호출)
-export async function ensureAudioStart() {
+/** 유저 제스처 후 오디오 시작(필요할 때만 호출) */
+export async function ensureAudioStart(toneModule) {
+  const Tone = toneModule || (await getTone());
   try {
-    if (Tone && typeof Tone.start === "function") {
-      await Tone.start();                  // v14 표준
-    } else if (Tone && Tone.context && typeof Tone.context.resume === "function") {
-      await Tone.context.resume();         // 폴백
-    }
-  } catch (_) {
-    // 여러 번 호출돼도 무해
-  }
-
-  try {
-    const ctx = (Tone && typeof Tone.getContext === "function")
-      ? Tone.getContext()
-      : (Tone ? Tone.context : null);
-    return (ctx && ctx.state) || "running";
-  } catch {
-    return "running";
-  }
+    await Tone.start(); // 크롬/사파리에서 사용자 제스처 필요
+  } catch (_) {}
+  return Tone.context.state === 'running';
 }
-
-export function createGain(gain = 1, toDest = false) {
-  if (!Tone || typeof Tone.Gain !== "function") {
-    throw new Error("Tone.Gain unavailable (Tone not loaded)");
-  }
-  const node = new Tone.Gain(gain);
-  if (toDest && typeof node.toDestination === "function") node.toDestination();
-  return node;
-}
-
-export function createPlayer(urlOrBuffer, opts = {}) {
-  if (!Tone || typeof Tone.Player !== "function") {
-    throw new Error("Tone.Player unavailable (Tone not loaded)");
-  }
-  return new Tone.Player({ url: urlOrBuffer, ...opts });
-}
-
-export function now() {
-  if (Tone && typeof Tone.now === "function") return Tone.now();
-  const ctx = (Tone && typeof Tone.getContext === "function")
-    ? Tone.getContext()
-    : (Tone ? Tone.context : null);
-  return (ctx && ctx.currentTime) || 0;
-}
-
-// ⚠ default export 없음(혼동 방지)
 </file>
 
 <file path="src/logo.svg">
@@ -4935,61 +4685,6 @@ export function BeatPadProvider({ children }) {
 export const useBeatPad = () => useContext(BeatPadContext);
 </file>
 
-<file path="src/styles/beatpad.css">
-/* 패드 컨테이너(크기/둥근모서리/배경) */
-.pad-stack {
-  position: relative;
-  width: 100%;
-  height: 320px;          /* 필요하면 360px 등으로 바꿔도 됨 */
-  border-radius: 12px;
-  overflow: hidden;
-  background: #1b1b1b;
-  /* 기본 그리드 느낌의 배경(셀 수와 정확히 일치하진 않지만 빈 화면 방지용) */
-  background-image:
-    repeating-linear-gradient(0deg, rgba(255,255,255,0.05) 0 1px, transparent 1px 24px),
-    repeating-linear-gradient(90deg, rgba(255,255,255,0.05) 0 1px, transparent 1px 24px);
-  background-size: 100% 100%;
-}
-
-/* 두 캔버스는 래퍼를 꽉 채움 */
-.blendpad-canvas,
-.blendpad-ghost {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
-/* 클릭/드래그용 캔버스 */
-.blendpad-canvas {
-  cursor: crosshair;         /* 셀 모드일 때 */
-}
-
-/* 고스트 미리보기는 포인터를 막아야 클릭이 아래로 전달됨 */
-.blendpad-ghost {
-  pointer-events: none;
-}
-
-/* (선택) 다크 테마 경계 강조 */
-.pad-stack::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border: 1px solid rgba(255,255,255,0.07);
-  border-radius: 12px;
-  pointer-events: none;
-}
-
-.path-overlay{
-  position:absolute;
-  inset:0;
-  width:100%;
-  height:100%;
-  pointer-events:none;          /* 경로 캔버스는 클릭 막지 않도록 */
-}
-</file>
-
 <file path="src/utils/audioExport.js">
 // src/utils/audioExport.js
 export async function bufferToWavBlob(audioBuffer) {
@@ -5811,11 +5506,10 @@ if __name__ == "__main__":
     "@magenta/music": "1.23.1",
     "@mui/icons-material": "^7.1.1",
     "@mui/material": "^7.1.1",
-    "@tensorflow/tfjs": "3.21.0",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",
-    "@testing-library/user-event": "^13.5.0",
+    "@tensorflow/tfjs": "1.7.4",
     "buffer": "^6.0.3",
     "firebase": "^11.10.0",
     "react": "^19.1.0",
@@ -5824,15 +5518,11 @@ if __name__ == "__main__":
     "react-error-boundary": "^6.0.0",
     "react-router-dom": "^7.6.1",
     "react-scripts": "5.0.1",
-    "tone": "14.9.17",
+    "tone": "14.7.58",
     "web-vitals": "^2.1.4"
   },
   "overrides": {
-    "@tensorflow/tfjs": "3.21.0",
-    "@tensorflow/tfjs-core": "3.21.0",
-    "@tensorflow/tfjs-converter": "3.21.0",
-    "@tensorflow/tfjs-backend-webgl": "3.21.0",
-    "@tensorflow/tfjs-backend-cpu": "3.21.0"
+    "@tensorflow/tfjs": "1.7.4"
   },
   "scripts": {
     "start": "react-scripts start",
@@ -5840,13 +5530,257 @@ if __name__ == "__main__":
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },
-  "eslintConfig": {
-    "extends": ["react-app","react-app/jest"]
-  },
+  "eslintConfig": { "extends": ["react-app","react-app/jest"] },
   "browserslist": {
     "production": [">0.2%","not dead","not op_mini all"],
     "development": ["last 1 chrome version","last 1 firefox version","last 1 safari version"]
   }
+}
+</file>
+
+<file path="src/components/beat/BlendPadCanvas.jsx">
+// src/components/beat/BlendPadCanvas.jsx
+import React, { useEffect, useRef, useState } from "react";
+import { useBeatPad } from "../../state/beatPadStore";
+import { useCellGrid } from "../../hooks/useCellGrid";
+import { cellCache } from "../../lib/beatblender/cellCache";
+import { encodeCorners, decodeAtPosition } from "../../lib/drumsVAE";
+
+export default function BlendPadCanvas({ corners, onDecodedPattern }) {
+  const ref = useRef(null);
+  const { state, dispatch } = useBeatPad();
+  const { toCell, centerOf } = useCellGrid(state.grid.cols, state.grid.rows);
+
+  const [dragging, setDragging] = useState(false);
+  const lastIndexRef = useRef(-1);
+  const lastPathPointRef = useRef({ x: -1, y: -1 });
+
+  // ────────────────────────────────────────────────────────────
+  // 좌표 보정: 0~1 정규화 좌표로 변환
+  // ────────────────────────────────────────────────────────────
+  const getXY01 = (e) => {
+    const el = ref.current;
+    if (!el) return { x: 0.5, y: 0.5 };
+    const r = el.getBoundingClientRect();
+    const px = e.clientX ?? (e.touches && e.touches[0]?.clientX) ?? 0;
+    const py = e.clientY ?? (e.touches && e.touches[0]?.clientY) ?? 0;
+    const x = (px - r.left) / r.width;
+    const y = (py - r.top) / r.height;
+    return { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) };
+  };
+
+  // ────────────────────────────────────────────────────────────
+  // VAE 인코딩/디코딩 보조
+  // ────────────────────────────────────────────────────────────
+  const ensureEncodings = async () => {
+    if (state.cornerEncodings) return state.cornerEncodings;
+    if (!corners) return null;
+    const enc = await encodeCorners(corners);
+    dispatch({ type: "SET_CORNERS", encodings: enc });
+    return enc;
+  };
+
+  const ensureDecoded = async (cell) => {
+    const idx = cell.index;
+    let pattern = cellCache.get(state.cellCacheVersion, idx);
+    if (pattern) return pattern;
+
+    const enc = await ensureEncodings();
+    if (!enc) return null;
+
+    const { x, y } = centerOf(cell);
+    pattern = await decodeAtPosition(enc, x, y, 1.1);
+    if (pattern) cellCache.set(state.cellCacheVersion, idx, pattern);
+    return pattern;
+  };
+
+  // ────────────────────────────────────────────────────────────
+  // CELL 모드: 셀 스냅 후 즉시 디코드
+  // ────────────────────────────────────────────────────────────
+  const applyAtEventCellMode = async (e) => {
+    const { x, y } = getXY01(e);
+    const cell = toCell(x, y);
+    dispatch({ type: "SELECT_CELL", cell });
+
+    // 같은 셀 반복 디코드 방지
+    if (cell.index === lastIndexRef.current) return;
+    lastIndexRef.current = cell.index;
+
+    const pattern = await ensureDecoded(cell);
+    if (pattern && onDecodedPattern) onDecodedPattern(pattern);
+  };
+
+  // ────────────────────────────────────────────────────────────
+  // DRAW 모드: 경로 점 누적(너무 촘촘하면 스킵)
+  // ────────────────────────────────────────────────────────────
+  const pushPathPoint = (x, y) => {
+    const prev = lastPathPointRef.current;
+    const dx = x - prev.x, dy = y - prev.y;
+    // 1% 이상 이동했을 때만 샘플링
+    if (prev.x < 0 || Math.hypot(dx, dy) > 0.01) {
+      dispatch({ type: "APPEND_PATH_POINT", point: { x, y } });
+      lastPathPointRef.current = { x, y };
+    }
+  };
+
+  // ────────────────────────────────────────────────────────────
+  // Pointer 이벤트: 마우스/터치 통합
+  // ────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const onPointerDown = (e) => {
+      // 우클릭 컨텍스트 메뉴 방지
+      if (e.button === 2) return;
+      setDragging(true);
+      lastIndexRef.current = -1;
+      lastPathPointRef.current = { x: -1, y: -1 };
+      el.setPointerCapture?.(e.pointerId);
+
+      if (state.mode === "CELL") {
+        applyAtEventCellMode(e);
+      } else {
+        const { x, y } = getXY01(e);
+        dispatch({ type: "RESET_PATH" });
+        dispatch({ type: "APPEND_PATH_POINT", point: { x, y } });
+        lastPathPointRef.current = { x, y };
+      }
+
+      e.preventDefault();
+    };
+
+    const onPointerMove = (e) => {
+      if (!dragging) return;
+      if (state.mode === "CELL") {
+        // 왼쪽 버튼을 누르고 있는 동안만
+        if ((e.buttons & 1) === 0 && e.pointerType !== "touch") return;
+        applyAtEventCellMode(e);
+      } else {
+        const { x, y } = getXY01(e);
+        pushPathPoint(x, y);
+      }
+    };
+
+    const endDrag = (e) => {
+      setDragging(false);
+      el.releasePointerCapture?.(e.pointerId);
+    };
+
+    el.addEventListener("pointerdown", onPointerDown, { passive: false });
+    window.addEventListener("pointermove", onPointerMove, { passive: true });
+    window.addEventListener("pointerup", endDrag);
+    window.addEventListener("pointercancel", endDrag);
+    window.addEventListener("pointerleave", endDrag);
+
+    return () => {
+      el.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", endDrag);
+      window.removeEventListener("pointercancel", endDrag);
+      window.removeEventListener("pointerleave", endDrag);
+    };
+    // state.mode만 의존 (corners/encodings은 내부 ensure 함수에서 처리)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.mode, dragging]);
+
+  return (
+    <canvas
+      ref={ref}
+      className="blendpad-canvas"
+      onContextMenu={(e) => e.preventDefault()}
+      role="application"
+      tabIndex={0}
+      aria-label="Beat blend pad"
+    />
+  );
+}
+</file>
+
+<file path="src/components/beat/PathOverlay.jsx">
+import React, { useEffect, useRef } from 'react';
+import { useBeatPad } from '../../state/beatPadStore';
+
+export default function PathOverlay() {
+  const { state } = useBeatPad();
+  const cvsRef = useRef(null);
+  const rafRef = useRef(null);
+
+  useEffect(() => {
+    const cvs = cvsRef.current;
+    if (!cvs) return;
+    const ctx = cvs.getContext('2d');
+
+    // 마지막으로 반영한 사이즈/스케일 기억
+    let lastW = 0, lastH = 0, lastDpr = 0;
+
+    const ensureSize = () => {
+      const rect = cvs.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const needResize =
+        rect.width !== lastW || rect.height !== lastH || dpr !== lastDpr;
+
+      if (needResize) {
+        lastW = rect.width;
+        lastH = rect.height;
+        lastDpr = dpr;
+
+        // ★ rAF 루프에서만 캔버스 실제 픽셀 사이즈 갱신 (ResizeObserver 사용 안 함)
+        const w = Math.max(1, Math.round(rect.width * dpr));
+        const h = Math.max(1, Math.round(rect.height * dpr));
+        if (cvs.width !== w || cvs.height !== h) {
+          cvs.width = w;
+          cvs.height = h;
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+      }
+    };
+
+    const draw = () => {
+      ensureSize();
+
+      const rect = cvs.getBoundingClientRect();
+      const w = rect.width;
+      const h = rect.height;
+
+      ctx.clearRect(0, 0, w, h);
+
+      // DRAW 모드에서만 경로 그림
+      const pts = state.mode === 'DRAW' ? state.path : null;
+      if (pts && pts.length) {
+        ctx.save();
+        ctx.lineWidth = 2.5;
+        ctx.strokeStyle = '#2DD4BF';
+        ctx.globalAlpha = 0.9;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x * w, pts[0].y * h);
+        for (let i = 1; i < pts.length; i++) {
+          ctx.lineTo(pts[i].x * w, pts[i].y * h);
+        }
+        ctx.stroke();
+
+        // 마지막 점 강조
+        const last = pts[pts.length - 1];
+        ctx.fillStyle = '#2DD4BF';
+        ctx.beginPath();
+        ctx.arc(last.x * w, last.y * h, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      rafRef.current = requestAnimationFrame(draw);
+    };
+
+    rafRef.current = requestAnimationFrame(draw);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [state.mode, state.path]);
+
+  return <canvas ref={cvsRef} className="path-overlay" />;
 }
 </file>
 
@@ -6873,27 +6807,18 @@ export default function AuthPage() {
 
 <file path="src/pages/MusicConversion.js">
 // src/pages/MusicConversion.js
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Container, Paper, Typography } from '@mui/material';
+import React, { useEffect, useRef, useState } from 'react';
+import { Box, Container, Grid, Paper, Typography } from '@mui/material';
 import MusicNote from '@mui/icons-material/MusicNote';
 import { useNavigate } from 'react-router-dom';
 
 import TransportBar from '../components/beat/TransportBar';
 import BeatGrid from '../components/beat/BeatGrid';
-// import BlendPad from '../components/beat/BlendPad';
+import BlendPad from '../components/beat/BlendPad';
 import { createKit } from '../components/beat/SampleKit';
 import { PRESETS, clonePattern, TRACKS } from '../components/beat/presets';
 import { downloadBlob } from '../utils/audioExport';
 import { getTone, ensureAudioStart } from '../lib/toneCompat';
-import { useMusicContext } from '../context/MusicContext';
-import { saveBeatItem } from '../services/libraryWriter';
-
-import { BeatPadProvider } from '../state/beatPadStore';
-import PadToolbar from '../components/beat/PadToolbar';
-import BlendPadCanvas from '../components/beat/BlendPadCanvas';
-import BlendPadGhostLayer from '../components/beat/BlendPadGhostLayer';
-import PathOverlay from '../components/beat/PathOverlay';
-import '../styles/beatpad.css';
 
 const colors = {
   background: '#0A0A0A',
@@ -6903,264 +6828,83 @@ const colors = {
   text: '#FFFFFF',
   textLight: '#CCCCCC',
   border: '#333333',
+  shadow: 'rgba(80,227,194,0.35)',
 };
 
 const STEPS = 16;
-const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-const blobToDataURL = (blob) =>
-  new Promise((resolve) => {
-    const fr = new FileReader();
-    fr.onloadend = () => resolve(fr.result);
-    fr.readAsDataURL(blob);
-  });
 
 export default function MusicConversion() {
-  const navigate = useNavigate();
-  const { state, actions } = useMusicContext();
-
-  const [pattern, setPattern] = useState(clonePattern(PRESETS['Four on the floor']));
-  const [currentStep, setCurrentStep] = useState(-1);
   const [bpm, setBpm] = useState(96);
-  const [bars, setBars] = useState(2);
-  const [busy, setBusy] = useState(false);
-  const [busyMsg, setBusyMsg] = useState('');
+  const [measures, setMeasures] = useState(2);
+  const [currentStep, setCurrentStep] = useState(0);
 
-  const [corners] = useState({
-    A: clonePattern(PRESETS['Rock 1']),
-    B: clonePattern(PRESETS['Pop Punk']),
-    C: clonePattern(PRESETS['Reggaeton']),
-    D: clonePattern(PRESETS['Samba Full Time']),
+  // 초기 패턴: Rock 1
+  const [pattern, setPattern] = useState(clonePattern(PRESETS['Rock 1']));
+  const [corners, setCorners] = useState({
+    A: PRESETS['Rock 1'],
+    B: PRESETS['Pop Punk'],
+    C: PRESETS['Reggaeton'],
+    D: PRESETS['Samba Full Time'],
   });
 
   const kitRef = useRef(null);
-  const seqRefs = useRef({});
-  const [isKitReady, setIsKitReady] = useState(false);
+  const synthReadyRef = useRef(false);
 
+  // Tone.js 로 샘플 로딩
   useEffect(() => {
     let mounted = true;
-    createKit({ volume: -6 }).then(kit => {
-      if (mounted) {
-        kitRef.current = kit;
-        setIsKitReady(true);
-      }
-    });
+    (async () => {
+      const Tone = await getTone();
+      await ensureAudioStart(Tone);
+      kitRef.current = await createKit(Tone);
+      synthReadyRef.current = true;
+    })();
     return () => {
       mounted = false;
-      kitRef.current?.dispose();
-      Object.values(seqRefs.current).forEach((s) => s?.dispose?.());
     };
   }, []);
 
-  useEffect(() => {
-    async function updateBpm() {
-      const Tone = await getTone();
-      if (Tone?.Transport?.bpm?.value != null) {
-        Tone.Transport.bpm.value = bpm;
-      }
-    }
-    updateBpm();
-  }, [bpm]);
-
-  const onToggle = (track, step) => {
-    setPattern((p) => {
-      const copy = clonePattern(p);
-      copy[track][step] = !copy[track][step];
-      return copy;
+  const handleToggle = (rowName, stepIdx) => {
+    setPattern((prev) => {
+      const next = { ...prev, [rowName]: [...prev[rowName]] };
+      next[rowName][stepIdx] = !next[rowName][stepIdx];
+      return next;
     });
   };
 
-  const stopAll = async () => {
-    const Tone = await getTone();
-    Tone?.Transport?.stop?.();
-    if (Tone?.Transport) Tone.Transport.position = 0;
-    setCurrentStep(-1);
-    Object.values(seqRefs.current).forEach((s) => s?.dispose?.());
-    seqRefs.current = {};
-  };
-
-  const startPlay = async () => {
-    if (!isKitReady) return;
-    const Tone = await getTone();
-    await ensureAudioStart(Tone);
-    await stopAll();
-    const kit = kitRef.current;
-    if (!kit) return;
-
-    TRACKS.forEach((t) => {
-      const seq = new Tone.Sequence(
-        (time, i) => {
-          if (pattern[t] && pattern[t][i]) kit.trigger(t, time);
-          Tone.Draw.schedule(() => setCurrentStep(i), time);
-        },
-        Array.from({ length: STEPS }, (_, i) => i),
-        '16n'
-      );
-      seq.start(0);
-      seqRefs.current[t] = seq;
-    });
-    Tone.Transport.start('+0.03');
-  };
-
-  const renderBeatToWavBlob = async () => {
-    if (!isKitReady) return null;
-    setBusy(true);
-    setBusyMsg('녹음 중...');
-    const Tone = await getTone();
-    await ensureAudioStart(Tone);
-    await stopAll();
-    const kit = kitRef.current;
-    if (!kit) return null;
-
-    TRACKS.forEach((t) => {
-      const seq = new Tone.Sequence(
-        (time, i) => { if (pattern[t] && pattern[t][i]) kit.trigger(t, time); },
-        Array.from({ length: STEPS }, (_, i) => i),
-        '16n'
-      );
-      seq.start(0);
-      seqRefs.current[t] = seq;
-    });
-
-    if (Tone?.Transport?.bpm?.value != null) Tone.Transport.bpm.value = bpm;
-
-    const recorder = new Tone.Recorder();
-    Tone.Destination.connect(recorder);
-    recorder.start();
-    Tone.Transport.start('+0.03');
-
-    const secondsPerBeat = 60 / bpm;
-    const totalSec = Math.max(1, bars) * (secondsPerBeat * 4);
-    await wait(totalSec * 1000 + 200);
-
-    const wavBlob = await recorder.stop();
-    Tone.Destination.disconnect(recorder);
-    await stopAll();
-    setBusy(false);
-    setBusyMsg('');
-    return wavBlob;
-  };
-
-  const saveBeatToLibrary = async (wavBlob, titleHint) => {
-    const user = state.auth.user;
-    if (!wavBlob || !user) return false;
-    try {
-      const title = `${titleHint || 'My Beat'}_${bpm}bpm_${Date.now()}`;
-      await saveBeatItem({ ownerId: user.uid, title, bpm, bars, pattern, audioBlob: wavBlob, presetMeta: null });
-      actions.addNotification({ type: 'success', message: '비트가 라이브러리에 저장되었습니다!' });
-      return true;
-    } catch (error) {
-      console.warn('[MusicConversion] save beat error', error);
-      actions.addNotification({ type: 'warning', message: '비트를 저장하지는 못했지만 파일은 준비되었어요.' });
-      return false;
-    }
-  };
-
-  const exportWav = async () => {
-    const wavBlob = await renderBeatToWavBlob();
-    if (!wavBlob) return;
-    const user = state.auth.user;
-    if (user) {
-      await saveBeatToLibrary(wavBlob, 'Beat');
-    } else {
-      actions.addNotification({ type: 'info', message: '로그인하면 만든 비트를 라이브러리에 저장할 수 있어요.' });
-    }
-    downloadBlob(wavBlob, `my-beat-${bpm}bpm-${bars}bars.wav`);
-  };
-
-  const sendToGenerate = async () => {
-    const wavBlob = await renderBeatToWavBlob();
-    if (wavBlob) {
-      const user = state.auth.user;
-      if (user) await saveBeatToLibrary(wavBlob, 'Beat');
-      setBusy(true);
-      setBusyMsg('보내는 중...');
-      const dataUrl = await blobToDataURL(wavBlob);
-      setBusy(false);
-      setBusyMsg('');
-      sessionStorage.setItem('inlineReferenceAudio', dataUrl);
-      navigate('/generate');
-    }
-  };
-
-  const colorsMemo = useMemo(() => colors, []);
-
-  const onClear = () => {
-    const emptyPattern = {};
-    TRACKS.forEach(track => { emptyPattern[track] = Array(STEPS).fill(false); });
-    setPattern(emptyPattern);
+  // BlendPad에서 새 패턴이 오면 그리드 교체
+  const handleBlend = (newPattern) => {
+    setPattern(newPattern);
   };
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: colorsMemo.background, py: 6 }}>
+    <Box sx={{ minHeight: '100vh', bgcolor: colors.background, pt: 4 }}>
       <Container maxWidth="lg">
-        <Typography
-          variant="h4"
-          sx={{ color: colorsMemo.text, fontWeight: 700, mb: 3, display: 'flex', alignItems: 'center' }}
-        >
-          <MusicNote sx={{ mr: 1, color: colorsMemo.primary }} />
+        <Typography variant="h4" sx={{ color: colors.text, fontWeight: 800, mb: 2 }}>
+          <MusicNote sx={{ mr: 1, verticalAlign: 'middle', color: colors.accent }} />
           비트 만들기
         </Typography>
 
-        <Box
-          sx={{
-            display: 'flex',
-            flexDirection: { xs: 'column', md: 'row' },
-            gap: { xs: 3, md: 4 },
-            alignItems: 'stretch',
-            flexWrap: { xs: 'wrap', md: 'nowrap' },
-          }}
-        >
-          {/* 좌: 패드 영역 */}
-          <Box sx={{ flex: { xs: '1 1 100%', md: '0 1 420px', lg: '0 1 460px' }, minWidth: 0 }}>
-            <Paper
-              elevation={0}
-              sx={{
-                bgcolor: colorsMemo.cardBg, p: 3, borderRadius: 3, border: `1px solid ${colorsMemo.border}`,
-                display: 'flex', flexDirection: 'column', height: '100%', minWidth: 0, overflow: 'hidden',
-              }}
-            >
-              <Typography variant="h6" sx={{ color: colorsMemo.text, fontWeight: 600, mb: 2, flexShrink: 0 }}>
-                패드 블렌딩
-              </Typography>
-
-              <BeatPadProvider>
-                <PadToolbar
-                  corners={corners}
-                  onApplyPattern={setPattern}
-                />
-                <Box className="pad-stack">
-                  <BlendPadCanvas corners={corners} onDecodedPattern={setPattern} />
-                  <BlendPadGhostLayer corners={corners} />
-                  <PathOverlay />
-                </Box>
-              </BeatPadProvider>
-            </Paper>
-          </Box>
-
-          {/* 우: 시퀀서/컨트롤 */}
-          <Box sx={{ flex: { xs: '1 1 100%', md: '1 1 0%' }, minWidth: 0 }}>
-            <Paper
-              elevation={0}
-              sx={{ bgcolor: colorsMemo.cardBg, p: 3, borderRadius: 3, border: `1px solid ${colorsMemo.border}` }}
-            >
-              <TransportBar
-                bpm={bpm} bars={bars} onChangeBpm={setBpm} onChangeBars={setBars}
-                onPlay={startPlay} onStop={stopAll} onClear={onClear}
-                onExport={exportWav} onSendToGenerate={sendToGenerate}
-                busy={busy || !isKitReady}
-                busyMsg={!isKitReady ? '오디오 샘플 로딩 중...' : busyMsg}
+        <Grid container spacing={3}>
+          {/* 왼쪽: 패드 */}
+          <Grid item xs={12} md={6}>
+            <Paper sx={{ p: 2, bgcolor: colors.cardBg, border: `1px solid ${colors.border}` }}>
+              <BlendPad
+                colors={colors}
+                corners={corners}
+                onChangeCorners={setCorners}
+                onBlend={handleBlend}
               />
-
-              <Box sx={{ mt: 3, overflowX: 'auto' }}>
-                <BeatGrid pattern={pattern} currentStep={currentStep} onToggle={onToggle} />
-              </Box>
-
-              <Typography variant="body2" sx={{ mt: 2, color: colorsMemo.textLight }}>
-                팁: 패드의 위치를 바꾸면 4개 코너 프리셋을 섞어 새 패턴이 만들어져요. 그리드에서 직접 찍어도 됩니다.
-              </Typography>
             </Paper>
-          </Box>
-        </Box>
+          </Grid>
+
+          {/* 오른쪽: 그리드 */}
+          <Grid item xs={12} md={6}>
+            <Paper sx={{ p: 2, bgcolor: colors.cardBg, border: `1px solid ${colors.border}` }}>
+              <BeatGrid pattern={pattern} currentStep={currentStep} onToggle={handleToggle} />
+            </Paper>
+          </Grid>
+        </Grid>
       </Container>
     </Box>
   );
@@ -7871,6 +7615,62 @@ const ScoreToMusic = () => {
 };
 
 export default ScoreToMusic;
+</file>
+
+<file path="src/styles/beatpad.css">
+/* 패드 컨테이너(크기/둥근모서리/배경) */
+.pad-stack {
+  position: relative;
+  width: 100%;
+  height: 320px;          /* 필요하면 360px 등으로 바꿔도 됨 */
+  border-radius: 12px;
+  overflow: hidden;
+  background: #1b1b1b;
+  /* 기본 그리드 느낌의 배경(셀 수와 정확히 일치하진 않지만 빈 화면 방지용) */
+  background-image:
+    repeating-linear-gradient(0deg, rgba(255,255,255,0.05) 0 1px, transparent 1px 24px),
+    repeating-linear-gradient(90deg, rgba(255,255,255,0.05) 0 1px, transparent 1px 24px);
+  background-size: 100% 100%;
+}
+
+/* 두 캔버스는 래퍼를 꽉 채움 */
+.blendpad-canvas,
+.blendpad-ghost {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* 클릭/드래그용 캔버스 */
+.blendpad-canvas {
+  cursor: crosshair;         /* 셀 모드일 때 */
+}
+
+/* 고스트 미리보기는 포인터를 막아야 클릭이 아래로 전달됨 */
+.blendpad-ghost {
+  pointer-events: none;
+}
+
+/* (선택) 다크 테마 경계 강조 */
+.pad-stack::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 12px;
+  pointer-events: none;
+}
+
+.path-overlay{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  pointer-events:none;          /* 경로 캔버스는 클릭 막지 않도록 */
+  z-index:3;
+}
 </file>
 
 </files>

@@ -1,7 +1,5 @@
 // src/components/beat/BeatGrid.jsx
-
 import React from 'react';
-// 사용하지 않는 Typography를 import 목록에서 제거했습니다.
 import { Box } from '@mui/material';
 import { TRACKS } from './presets';
 
@@ -9,38 +7,65 @@ function labelOf(key) {
   switch (key) {
     case 'kick': return 'Kick';
     case 'snare': return 'Snare';
-    case 'hatClose': return 'Hat (C)';
-    case 'hatOpen': return 'Hat (O)';
-    case 'tomLow': return 'Tom (L)';
-    case 'tomMid': return 'Tom (M)';
-    case 'tomHigh': return 'Tom (H)';
+    case 'hatC': return 'Hat (C)';
+    case 'hatO': return 'Hat (O)';
+    case 'tomL': return 'Tom (L)';
+    case 'tomM': return 'Tom (M)';
+    case 'tomH': return 'Tom (H)';
     case 'crash': return 'Crash';
     case 'ride': return 'Ride';
     default: return key;
   }
 }
 
-export default function BeatGrid({ pattern, currentStep, onToggle }) {
-  // 사용하지 않는 mainTracks와 subTracks 변수를 제거했습니다.
+/**
+ * props:
+ *  - pattern, currentStep, onToggle (필수)
+ *  - fullWidth?: boolean           // 컨테이너 가로 100%
+ *  - minCell?: number              // 각 스텝의 최소 너비(px)
+ *  - gap?: number                  // 스텝 사이 간격(px)
+ *  - labelWidth?: number           // 좌측 라벨 영역 폭(px)
+ */
+export default function BeatGrid({
+  pattern,
+  currentStep,
+  onToggle,
+  fullWidth = true,
+  minCell = 36,
+  gap = 6,
+  labelWidth = 90,
+}) {
+  const cellH = 28;
 
   return (
-    // 전체를 감싸는 Box에서 flex 레이아웃을 제거하여 단순화했습니다.
-    <Box>
-      {/* 16칸짜리 메인 시퀀서 */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: '80px repeat(16, 1fr)', gap: '4px' /* 칸 사이 간격을 살짝 줍니다 */ }}>
-        {/* 헤더 */}
+    <Box sx={{ width: fullWidth ? '100%' : 'auto', height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: `${labelWidth}px repeat(16, minmax(${minCell}px, 1fr))`,
+          gap: { xs: '4px', md: `${gap}px` },
+          alignItems: 'center',
+          flex: 1,
+          overflowX: 'auto',
+          pb: 1,
+        }}
+      >
+        {/* 헤더(1~16) */}
         <Box />
         {Array.from({ length: 16 }).map((_, i) => (
-          <Box key={`h${i}`} sx={{ textAlign: 'center', fontSize: 12, color: '#aaa' }}>{i + 1}</Box>
+          <Box key={`h${i}`} sx={{ textAlign: 'center', fontSize: { xs: 11, md: 12 }, color: '#9aa7b3' }}>
+            {i + 1}
+          </Box>
         ))}
-        
-        {/* 9줄을 모두 렌더링하는 로직은 그대로 유지합니다. */}
+
+        {/* 트랙 9줄 */}
         {TRACKS.map((trackName) => (
           <React.Fragment key={trackName}>
-            <Box sx={{ color: '#ddd', fontWeight: 600, display: 'flex', alignItems: 'center', height: 28 }}>
+            <Box sx={{ color: '#ddd', fontWeight: 600, display: 'flex', alignItems: 'center', height: cellH }}>
               {labelOf(trackName)}
             </Box>
-            {(pattern[trackName] || []).map((on, step) => {
+
+            {(pattern[trackName] || Array(16).fill(false)).map((on, step) => {
               const isNow = step === currentStep;
               return (
                 <Box
@@ -48,7 +73,7 @@ export default function BeatGrid({ pattern, currentStep, onToggle }) {
                   onClick={() => onToggle(trackName, step)}
                   sx={{
                     cursor: 'pointer',
-                    height: 28,
+                    height: cellH,
                     borderRadius: 1,
                     border: '1px solid #333',
                     bgcolor: on ? (isNow ? '#2DD4BF' : '#1e8f7e') : (isNow ? '#333' : '#111'),
