@@ -1,7 +1,7 @@
 // src/components/beat/BeatGrid.jsx
 import React from 'react';
 import { Box } from '@mui/material';
-import { TRACKS } from './presets';
+import { PATTERN_STEPS, TRACKS } from './presets';
 
 function labelOf(key) {
   switch (key) {
@@ -34,15 +34,19 @@ export default function BeatGrid({
   minCell = 36,
   gap = 6,
   labelWidth = 90,
+  cellHeight = 28,
 }) {
-  const cellH = 28;
+  const cellH = cellHeight;
+  const gapPx = Number.isFinite(gap) ? gap : 6;
+  const gridMinWidth = labelWidth + PATTERN_STEPS * (minCell + gapPx);
 
   return (
     <Box sx={{ width: fullWidth ? '100%' : 'auto', height: '100%', display: 'flex', flexDirection: 'column' }}>
       <Box
         sx={{
           display: 'grid',
-          gridTemplateColumns: `${labelWidth}px repeat(16, minmax(${minCell}px, 1fr))`,
+          minWidth: `${gridMinWidth}px`,
+          gridTemplateColumns: `${labelWidth}px repeat(${PATTERN_STEPS}, minmax(${minCell}px, 1fr))`,
           gap: { xs: '4px', md: `${gap}px` },
           alignItems: 'center',
           flex: 1,
@@ -52,39 +56,42 @@ export default function BeatGrid({
       >
         {/* 헤더(1~16) */}
         <Box />
-        {Array.from({ length: 16 }).map((_, i) => (
+        {Array.from({ length: PATTERN_STEPS }).map((_, i) => (
           <Box key={`h${i}`} sx={{ textAlign: 'center', fontSize: { xs: 11, md: 12 }, color: '#9aa7b3' }}>
             {i + 1}
           </Box>
         ))}
 
         {/* 트랙 9줄 */}
-        {TRACKS.map((trackName) => (
-          <React.Fragment key={trackName}>
-            <Box sx={{ color: '#ddd', fontWeight: 600, display: 'flex', alignItems: 'center', height: cellH }}>
-              {labelOf(trackName)}
-            </Box>
+        {TRACKS.map((trackName) => {
+          const steps = Array.from({ length: PATTERN_STEPS }, (_, idx) => pattern[trackName]?.[idx] ?? false);
+          return (
+            <React.Fragment key={trackName}>
+              <Box sx={{ color: '#ddd', fontWeight: 600, display: 'flex', alignItems: 'center', height: cellH }}>
+                {labelOf(trackName)}
+              </Box>
 
-            {(pattern[trackName] || Array(16).fill(false)).map((on, step) => {
-              const isNow = step === currentStep;
-              return (
-                <Box
-                  key={`${trackName}-${step}`}
-                  onClick={() => onToggle(trackName, step)}
-                  sx={{
-                    cursor: 'pointer',
-                    height: cellH,
-                    borderRadius: 1,
-                    border: '1px solid #333',
-                    bgcolor: on ? (isNow ? '#2DD4BF' : '#1e8f7e') : (isNow ? '#333' : '#111'),
-                    boxShadow: on ? '0 0 8px rgba(45,212,191,0.35)' : 'none',
-                    transition: 'background-color .12s, box-shadow .12s',
-                  }}
-                />
-              );
-            })}
-          </React.Fragment>
-        ))}
+              {steps.map((on, step) => {
+                const isNow = step === currentStep;
+                return (
+                  <Box
+                    key={`${trackName}-${step}`}
+                    onClick={() => onToggle(trackName, step)}
+                    sx={{
+                      cursor: 'pointer',
+                      height: cellH,
+                      borderRadius: 1,
+                      border: '1px solid #333',
+                      bgcolor: on ? (isNow ? '#2DD4BF' : '#1e8f7e') : (isNow ? '#333' : '#111'),
+                      boxShadow: on ? '0 0 8px rgba(45,212,191,0.35)' : 'none',
+                      transition: 'background-color .12s, box-shadow .12s',
+                    }}
+                  />
+                );
+              })}
+            </React.Fragment>
+          );
+        })}
       </Box>
     </Box>
   );

@@ -7,7 +7,7 @@ import TransportBar from '../components/beat/TransportBar';
 import BeatGrid from '../components/beat/BeatGrid';
 import BlendPad from '../components/beat/BlendPad';
 import { createKit, SAMPLE_PATHS } from '../components/beat/SampleKit';
-import { PRESETS, clonePattern } from '../components/beat/presets';
+import { PRESETS, PATTERN_STEPS, clonePattern } from '../components/beat/presets';
 import { getTone, ensureAudioStart } from '../lib/toneCompat';
 import { audioBufferToWav } from '../lib/audioUtils';
 
@@ -22,7 +22,7 @@ const colors = {
   shadow: 'rgba(80,227,194,0.35)',
 };
 
-const STEPS = 16;
+const STEPS = PATTERN_STEPS;
 
 export default function MusicConversion() {
   const [bpm, setBpm] = useState(96);
@@ -261,7 +261,7 @@ export default function MusicConversion() {
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: colors.background, pt: 4 }}>
       {/* 폭 확장: lg → xl, 좌우 여백 살짝 */}
-      <Container maxWidth="xl" sx={{ px: { xs: 2, md: 4 } }}>
+      <Container maxWidth="xl" sx={{ px: { xs: 2, md: 5, xl: 6 } }}>
         <Typography variant="h4" sx={{ color: colors.text, fontWeight: 800, mb: 2 }}>
           <MusicNote sx={{ mr: 1, verticalAlign: 'middle', color: colors.accent }} />
           비트 만들기
@@ -290,13 +290,25 @@ export default function MusicConversion() {
             gap: { xs: 2, md: 3 },
             gridTemplateColumns: {
               xs: '1fr',
-              sm: 'minmax(280px, 360px) minmax(0, 1fr)',
-              lg: 'minmax(320px, 400px) minmax(0, 1fr)',
+              md: 'minmax(340px, 480px) minmax(0, 2.4fr)',
+              lg: 'minmax(360px, 520px) minmax(0, 3fr)',
+              xl: 'minmax(380px, 560px) minmax(0, 3.4fr)',
             },
             alignItems: 'stretch',
+            width: '100%',
+            maxWidth: 'min(1400px, 100%)',
+            mx: 'auto',
           }}
         >
-          <Paper sx={{ p: 2, bgcolor: colors.cardBg, border: `1px solid ${colors.border}`, height: '100%' }}>
+          <Paper
+            sx={{
+              p: { xs: 2, md: 3 },
+              bgcolor: colors.cardBg,
+              border: `1px solid ${colors.border}`,
+              height: '100%',
+              minWidth: 0,
+            }}
+          >
             <BlendPad
               colors={colors}
               corners={corners}
@@ -305,16 +317,29 @@ export default function MusicConversion() {
             />
           </Paper>
 
-          <Paper sx={{ p: 2, bgcolor: colors.cardBg, border: `1px solid ${colors.border}`, height: '100%' }}>
-            <BeatGrid
-              pattern={pattern}
-              currentStep={currentStep}
-              onToggle={handleToggle}
-              fullWidth
-              minCell={40}      // ? ?? ?? ??(px)
-              gap={8}           // ?? ?? ??(px)
-              labelWidth={92}   // ?? ??? ??(px)
-            />
+          <Paper
+            sx={{
+              p: { xs: 2, md: 3 },
+              bgcolor: colors.cardBg,
+              border: `1px solid ${colors.border}`,
+              height: '100%',
+              minWidth: 0,
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            <Box sx={{ flex: 1, minWidth: 0, overflowX: 'auto' }}>
+              <BeatGrid
+                pattern={pattern}
+                currentStep={currentStep}
+                onToggle={handleToggle}
+                fullWidth
+                minCell={48}
+                gap={10}
+                labelWidth={110}
+                cellHeight={34}
+              />
+            </Box>
           </Paper>
         </Box>
 

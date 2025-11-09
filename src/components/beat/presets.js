@@ -5,15 +5,19 @@ export const TRACKS = [
   'tomLow', 'tomMid', 'tomHigh', 'crash', 'ride'
 ];
 
-function fromBitmask(bitmaskArray) {
+export const PATTERN_STEPS = 32;
+
+function fromBitmask(bitmaskArray = []) {
+  const maskLength = bitmaskArray.length;
   const pattern = {};
   TRACKS.forEach(track => {
-    pattern[track] = Array(16).fill(false); // 16칸으로 변경
+    pattern[track] = Array(PATTERN_STEPS).fill(false);
   });
 
-  // 16스텝만 사용합니다.
-  for (let i = 0; i < 16; i++) {
-    const mask = bitmaskArray[i] || 0;
+  for (let i = 0; i < PATTERN_STEPS; i++) {
+    const mask = maskLength
+      ? (bitmaskArray[i] ?? bitmaskArray[i % maskLength] ?? 0)
+      : 0;
     if ((mask & 1) > 0) pattern.kick[i] = true;
     if ((mask & 2) > 0) pattern.snare[i] = true;
     if ((mask & 4) > 0) pattern.hatClose[i] = true;
@@ -27,7 +31,12 @@ function fromBitmask(bitmaskArray) {
   return pattern;
 }
 
-const B = (arr) => (arr.length === 16 ? arr : Array(16).fill(false).map((_, i) => !!arr[i]));
+const B = (arr) => {
+  const source = Array.isArray(arr) ? arr : [];
+  const len = source.length;
+  if (len === 0) return Array(PATTERN_STEPS).fill(false);
+  return Array(PATTERN_STEPS).fill(false).map((_, i) => !!source[i % len]);
+};
 
 export const PRESETS = {
   // 32칸 데이터 중 앞 16칸만 사용됩니다.
@@ -66,6 +75,14 @@ export const clonePattern = (p) => {
   const newPattern = {};
   TRACKS.forEach(track => {
     newPattern[track] = p && p[track] ? [...p[track]] : B([]);
+    if (newPattern[track].length < PATTERN_STEPS) {
+      newPattern[track] = [
+        ...newPattern[track],
+        ...Array(PATTERN_STEPS - newPattern[track].length).fill(false),
+      ];
+    } else if (newPattern[track].length > PATTERN_STEPS) {
+      newPattern[track] = newPattern[track].slice(0, PATTERN_STEPS);
+    }
   });
   return newPattern;
 };

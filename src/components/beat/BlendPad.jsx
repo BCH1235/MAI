@@ -1,7 +1,7 @@
 // src/components/beat/BlendPad.jsx
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Typography, FormControl, Select, MenuItem, Stack } from '@mui/material';
-import { PRESETS, TRACKS } from './presets';
+import { PATTERN_STEPS, PRESETS, TRACKS } from './presets';
 import { loadDrumsVAE, encodeCorners, decodeAtPosition } from '../../lib/drumsVAE';
 
 const weights = (x, y) => ({
@@ -16,7 +16,7 @@ function blendPatterns(corners, x, y, thresh = 0.5) {
   const w = weights(x, y);
   const out = {};
   TRACKS.forEach((track) => {
-    out[track] = Array.from({ length: 16 }, (_, i) => {
+    out[track] = Array.from({ length: PATTERN_STEPS }, (_, i) => {
       const v =
         (corners.A?.[track]?.[i] ? 1 : 0) * w.A +
         (corners.B?.[track]?.[i] ? 1 : 0) * w.B +

@@ -1,14 +1,14 @@
 // src/lib/drumsVAE.js
 import * as mm from '@magenta/music';
-import { TRACKS } from '../components/beat/presets';
+import { PATTERN_STEPS, TRACKS } from '../components/beat/presets';
 
-// ✅ Magenta 공식 드럼 VAE 체크포인트(2bar, 경량)
+// Magenta 공식 드럼 VAE 체크포인트(2bar, 경량)
 const CKPT =
   'https://storage.googleapis.com/magentadata/js/checkpoints/music_vae/drums_2bar_small';
 
 let _vae = null;
 
-/** VAE 싱글턴 로딩 */
+/** VAE 인스턴스 로딩 */
 export async function loadDrumsVAE() {
   if (_vae) return _vae;
   const vae = new mm.MusicVAE(CKPT);
@@ -17,9 +17,9 @@ export async function loadDrumsVAE() {
   return _vae;
 }
 
-/** 16스텝 드럼 패턴 → Quantized NoteSequence */
-function patternToQuantizedNS(pattern, stepsPerQuarter = 4 /*16분음표*/) {
-  // 간단한 드럼 피치 매핑
+/** PATTERN_STEPS 길이 드럼 패턴 → Quantized NoteSequence */
+function patternToQuantizedNS(pattern, stepsPerQuarter = 4 /* 16분음표 */) {
+  // 간단한 드럼 음고 매핑
   const DRUM_PITCH = {
     Kick: 36,
     Snare: 38,
@@ -36,7 +36,7 @@ function patternToQuantizedNS(pattern, stepsPerQuarter = 4 /*16분음표*/) {
   for (const track of TRACKS) {
     const arr = pattern[track] || [];
     const pitch = DRUM_PITCH[track] ?? 36; // fallback: kick
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < PATTERN_STEPS; i++) {
       if (arr[i]) {
         notes.push({
           pitch,
@@ -51,15 +51,15 @@ function patternToQuantizedNS(pattern, stepsPerQuarter = 4 /*16분음표*/) {
   return {
     notes,
     quantizationInfo: { stepsPerQuarter },
-    totalQuantizedSteps: 16,
-    tempos: [{ qpm: 120 }], // qpm은 크게 중요치 않음(정규화됨)
+    totalQuantizedSteps: PATTERN_STEPS,
+    tempos: [{ qpm: 120 }], // qpm은 크게 중요하지 않음(고정됨)
   };
 }
 
-/** NoteSequence(드럼) → 16스텝 패턴 */
+/** NoteSequence(드럼) → PATTERN_STEPS 길이 패턴 */
 function nsToPattern(ns) {
   const out = {};
-  for (const t of TRACKS) out[t] = Array(16).fill(false);
+  for (const t of TRACKS) out[t] = Array(PATTERN_STEPS).fill(false);
 
   const PITCH_TO_TRACK = new Map([
     [36, 'Kick'],
@@ -77,14 +77,14 @@ function nsToPattern(ns) {
     if (!n.isDrum) return;
     const tr = PITCH_TO_TRACK.get(n.pitch);
     if (!tr) return;
-    const step = Math.max(0, Math.min(15, n.quantizedStartStep | 0));
+    const step = Math.max(0, Math.min(PATTERN_STEPS - 1, n.quantizedStartStep | 0));
     out[tr][step] = true;
   });
 
   return out;
 }
 
-/** 네 코너 패턴을 인코딩(잠복공간 z 벡터 4개 반환) */
+/** 4개의 코너 패턴을 인코딩해 잠복공간 z 벡터 4개 반환 */
 export async function encodeCorners(corners) {
   const vae = await loadDrumsVAE();
   const seqs = ['A', 'B', 'C', 'D'].map((k) =>
@@ -97,7 +97,7 @@ export async function encodeCorners(corners) {
   return zArr; // [{...}x zDim] * 4
 }
 
-/** (x,y)에 해당하는 보간 패턴 디코드 */
+/** (x,y)에 해당하는 보간 패턴 디코딩 */
 export async function decodeAtPosition(encodedLatents, x, y, opts = {}) {
   const vae = await loadDrumsVAE();
   const wA = (1 - x) * (1 - y);
@@ -116,7 +116,7 @@ export async function decodeAtPosition(encodedLatents, x, y, opts = {}) {
       encodedLatents[3][i] * wD;
   }
 
-  // tf 텐서로 만들어 decode
+  // tf 로 tensor를 만들어 decode
   const tf = mm.tf;
   const zTensor = tf.tensor2d([avg], [1, zDim]);
   const decoded = await vae.decode(zTensor, opts.temperature ?? 0.5);

@@ -59,7 +59,7 @@ export default function TransportBar(props) {
 
   const handleBarsChange = (e) => {
     const raw = Number(e.target.value) || 1;
-    const v = Math.max(1, Math.min(16, raw));
+    const v = Math.max(1, Math.min(32, raw));
     setBarsLocal(v);
     onChangeBars?.(v);
   };
@@ -128,7 +128,7 @@ export default function TransportBar(props) {
           type="number"
           value={barsLocal}
           onChange={handleBarsChange}
-          inputProps={{ min: 1, max: 16 }}
+          inputProps={{ min: 1, max: 32 }}
           sx={{ 
             width: 120,
             '& .MuiInputBase-root': { bgcolor: '#111', color: colors.text, borderRadius: 2 },
