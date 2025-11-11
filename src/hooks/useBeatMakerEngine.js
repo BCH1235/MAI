@@ -52,7 +52,13 @@ export function useBeatMakerEngine() {
   const { actions: globalActions } = useMusicContext();
   const { toCell, centerOf } = useCellGrid(state.grid.cols, state.grid.rows);
   const kitRef = useRef(null);
-  const transportIdRef = useRef(null);
+  const partRef = useRef(null);
+  const stateRef = useRef(state);
+  const pathPatternsRef = useRef([]);
+  const pathPositionsRef = useRef([]);
+  const pathVersionRef = useRef(0);
+  const lastManualPatternRef = useRef(state.pattern);
+  const wasPathPlayingRef = useRef(false);
   const blendRequestRef = useRef(0);
   const lastVaeCall = useRef(0);
   const VAE_DEBOUNCE_DELAY = 100;
@@ -81,6 +87,29 @@ export function useBeatMakerEngine() {
       kitRef.current?.gain?.dispose();
     };
   }, []); // 빈 배열: 최초 1회만 실행
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  useEffect(() => {
+    const nowPathPlaying = state.drawMode === "PATH" && state.isPlaying;
+    if (nowPathPlaying && !wasPathPlayingRef.current) {
+      lastManualPatternRef.current = state.pattern;
+    }
+    if (!nowPathPlaying && wasPathPlayingRef.current) {
+      if (lastManualPatternRef.current) {
+        dispatch({ type: "SET_PATTERN", payload: lastManualPatternRef.current });
+      }
+    }
+    wasPathPlayingRef.current = nowPathPlaying;
+  }, [state.drawMode, state.isPlaying, state.pattern, dispatch]);
+
+  useEffect(() => {
+    if (state.drawMode !== "PATH") {
+      lastManualPatternRef.current = state.pattern;
+    }
+  }, [state.pattern, state.drawMode]);
 
   // --- 코너 패턴이 변경되면 자동으로 인코딩 수행 ---
   useEffect(() => {
@@ -113,80 +142,114 @@ export function useBeatMakerEngine() {
     }
   }, [state.bpm]);
 
-  // 3. 재생 로직: 'isPlaying' 상태에 따라 Tone.Transport를 제어합니다.
+  const fillPartWithPattern = () => {
+    const part = partRef.current;
+    if (!part) return;
+
+    const currentState = stateRef.current;
+    part.clear();
+    const totalSteps = PATTERN_STEPS * currentState.bars;
+
+    for (let step = 0; step < totalSteps; step++) {
+      const time = `0:${Math.floor(step / 4)}:${step % 4}`;
+      part.add(time, { step: step % PATTERN_STEPS, index: step, totalSteps });
+    }
+  };
+
+  // 3. 재생 로직을 Tone.Part 기반으로 구현합니다.
   useEffect(() => {
-    const loopCallback = async (time) => {
-      const totalSteps = PATTERN_STEPS * state.bars;
-      const stepIndex = Math.floor(Tone.Transport.ticks / Tone.Time("16n").toTicks()) % totalSteps;
-
-      let patternToPlay = state.pattern;
-
-      if (state.drawMode === "PATH" && state.path.length > 1 && state.cornerEncodings) {
-        const loopDuration = Tone.Time(`${state.bars}m`).toTicks();
-        const currentProgress = (Tone.Transport.ticks % loopDuration) / loopDuration;
-        const pos = samplePath(state.path, currentProgress);
-        const cell = toCell(pos.x, pos.y);
-
-        Tone.Draw.schedule(() => {
-          dispatch({ type: "SET_PUCK_POSITION", payload: { position: pos, index: cell.index } });
-        }, time);
-
-        const now = typeof performance !== "undefined" ? performance.now() : Date.now();
-        if (now - lastVaeCall.current > 100) {
-          lastVaeCall.current = now;
-          try {
-            patternToPlay = await decodeAtPosition(state.cornerEncodings, pos.x, pos.y);
-          } catch (e) {
-            // ignore decode errors
-          }
-        }
-      }
-
-      Object.entries(patternToPlay || state.pattern).forEach(([trackName, steps]) => {
-        if (steps && steps[stepIndex % PATTERN_STEPS]) {
-          const playerKey = TRACK_TO_PLAYER_KEY_MAP[trackName];
-          if (playerKey) {
-            kitRef.current?.players.player(playerKey).start(time);
-          }
-        }
-      });
-
-      Tone.Draw.schedule(() => {
-        dispatch({ type: "SET_CURRENT_STEP", payload: stepIndex });
-      }, time);
-    };
-
     if (state.isPlaying) {
-      if (transportIdRef.current === null) {
-        transportIdRef.current = Tone.Transport.scheduleRepeat(loopCallback, "16n");
+      if (!partRef.current) {
+        const part = new Tone.Part(async (time, note) => {
+          const currentState = stateRef.current;
+          let patternToPlay = currentState.pattern;
+          const totalSteps = note.totalSteps || PATTERN_STEPS * currentState.bars;
+          const stepIndex = note.index % totalSteps;
+
+          if (currentState.drawMode === "PATH" && currentState.path.length > 1 && pathPatternsRef.current.length === totalSteps) {
+            const sampledPattern = pathPatternsRef.current[stepIndex];
+            const sampledPosition = pathPositionsRef.current[stepIndex];
+            if (sampledPattern) {
+              patternToPlay = sampledPattern;
+            }
+            if (sampledPosition) {
+              Tone.Draw.schedule(() => {
+                dispatch({ type: "SET_PUCK_POSITION", payload: { position: sampledPosition, index: stepIndex } });
+              }, time);
+            }
+          }
+
+          Object.entries(patternToPlay || {}).forEach(([trackName, steps]) => {
+            if (steps?.[note.step]) {
+              const playerKey = TRACK_TO_PLAYER_KEY_MAP[trackName];
+              if (playerKey) {
+                kitRef.current?.players.player(playerKey).start(time);
+              }
+            }
+          });
+
+          Tone.Draw.schedule(() => {
+            dispatch({ type: "SET_CURRENT_STEP", payload: note.step });
+            if (currentState.drawMode === "PATH" && patternToPlay) {
+              dispatch({ type: "SET_PATTERN", payload: patternToPlay });
+            }
+          }, time);
+        }, []).start(0);
+
+        part.loop = true;
+        partRef.current = part;
       }
+
+      partRef.current.loopEnd = `${state.bars}m`;
+      fillPartWithPattern();
       if (Tone.Transport.state !== "started") {
         Tone.Transport.start("+0.1");
       }
     } else {
       Tone.Transport.stop();
-      if (transportIdRef.current !== null) {
-        Tone.Transport.clear(transportIdRef.current);
-        transportIdRef.current = null;
-      }
     }
 
     return () => {
-      if (transportIdRef.current !== null) {
-        Tone.Transport.clear(transportIdRef.current);
-        transportIdRef.current = null;
-      }
+      Tone.Transport.stop();
     };
-  }, [
-    state.isPlaying,
-    state.drawMode,
-    state.path,
-    state.bars,
-    state.cornerEncodings,
-    state.pattern,
-    dispatch,
-    toCell,
-  ]);
+  }, [state.isPlaying, state.bars, dispatch]);
+
+  useEffect(() => {
+    if (state.isPlaying) {
+      fillPartWithPattern();
+    }
+  }, [state.bars, state.isPlaying]);
+
+  useEffect(() => {
+    if (!(state.path.length > 1 && state.cornerEncodings)) {
+      pathPatternsRef.current = [];
+      pathPositionsRef.current = [];
+      return;
+    }
+
+    const version = ++pathVersionRef.current;
+    const totalSteps = PATTERN_STEPS * state.bars;
+
+    (async () => {
+      const patterns = [];
+      const positions = [];
+      for (let step = 0; step < totalSteps; step++) {
+        const progress = totalSteps ? step / totalSteps : 0;
+        const pos = samplePath(state.path, progress);
+        positions[step] = pos;
+        try {
+          patterns[step] = await decodeAtPosition(state.cornerEncodings, pos.x, pos.y);
+        } catch (error) {
+          console.error("Failed to decode path step", error);
+          patterns[step] = null;
+        }
+      }
+      if (pathVersionRef.current === version) {
+        pathPatternsRef.current = patterns;
+        pathPositionsRef.current = positions;
+      }
+    })();
+  }, [state.path, state.cornerEncodings, state.bars]);
 
   // 4. UI 컴포넌트에서 사용할 액션 함수들을 정의합니다.
   const actions = useMemo(
