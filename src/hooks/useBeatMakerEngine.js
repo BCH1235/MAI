@@ -6,7 +6,7 @@ import * as Tone from "tone";
 import { createKit } from "../components/beat/SampleKit";
 import { clonePattern, TRACKS, PATTERN_STEPS } from "../components/beat/presets";
 import { loadDrumsVAE, encodeCorners, decodeAtPosition } from "../lib/drumsVAE";
-import { samplePath } from "./usePathMode";
+import { samplePathByDistance } from "./usePathMode";
 import { useCellGrid } from "./useCellGrid";
 import { audioBufferToWav } from "../utils/audioExport";
 import { useMusicContext } from "../context/MusicContext";
@@ -166,7 +166,7 @@ export function useBeatMakerEngine() {
           const totalSteps = note.totalSteps || PATTERN_STEPS * currentState.bars;
           const stepIndex = note.index % totalSteps;
 
-          if (currentState.drawMode === "PATH" && currentState.path.length > 1 && pathPatternsRef.current.length === totalSteps) {
+          if (currentState.drawMode === "PATH" && currentState.path.length > 1) {
             const sampledPattern = pathPatternsRef.current[stepIndex];
             const sampledPosition = pathPositionsRef.current[stepIndex];
             if (sampledPattern) {
@@ -229,24 +229,28 @@ export function useBeatMakerEngine() {
 
     const version = ++pathVersionRef.current;
     const totalSteps = PATTERN_STEPS * state.bars;
+    const positions = Array(totalSteps)
+      .fill(null)
+      .map((_, step) => {
+        const progress = totalSteps ? step / totalSteps : 0;
+        return samplePathByDistance(state.path, progress);
+      });
+    pathPositionsRef.current = positions;
 
     (async () => {
-      const patterns = [];
-      const positions = [];
-      for (let step = 0; step < totalSteps; step++) {
-        const progress = totalSteps ? step / totalSteps : 0;
-        const pos = samplePath(state.path, progress);
-        positions[step] = pos;
-        try {
-          patterns[step] = await decodeAtPosition(state.cornerEncodings, pos.x, pos.y);
-        } catch (error) {
-          console.error("Failed to decode path step", error);
-          patterns[step] = null;
+      try {
+        const decodePromises = positions.map((pos) =>
+          decodeAtPosition(state.cornerEncodings, pos.x, pos.y).catch((error) => {
+            console.error("Failed to decode path step", error);
+            return null;
+          })
+        );
+        const patterns = await Promise.all(decodePromises);
+        if (pathVersionRef.current === version) {
+          pathPatternsRef.current = patterns;
         }
-      }
-      if (pathVersionRef.current === version) {
-        pathPatternsRef.current = patterns;
-        pathPositionsRef.current = positions;
+      } catch (error) {
+        console.error("Path decoding batch failed", error);
       }
     })();
   }, [state.path, state.cornerEncodings, state.bars]);
