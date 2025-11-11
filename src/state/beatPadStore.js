@@ -77,6 +77,9 @@ function reducer(state, action) {
     case "APPEND_PATH_POINT":
       return { ...state, path: [...state.path, action.payload] };
 
+    case "SET_PATH":
+      return { ...state, path: action.payload };
+
     case "SET_CORNER_PRESET": {
       const { corner, presetName } = action.payload;
       const presetPattern = PRESETS[presetName] || PRESETS["Rock 1"];

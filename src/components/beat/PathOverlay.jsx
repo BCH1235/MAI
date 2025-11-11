@@ -3,7 +3,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useBeatPad } from '../../state/beatPadStore';
 
-export default function PathOverlay() {
+export default function PathOverlay({ pathRef, isDrawing }) {
   const { state } = useBeatPad();
   const canvasRef = useRef(null);
   const rafRef = useRef(null);
@@ -37,8 +37,8 @@ export default function PathOverlay() {
 
       ctx.clearRect(0, 0, width, height);
 
-      const path = state.path;
-      if (state.drawMode === 'PATH' && path && path.length > 1) {
+      const activePath = isDrawing ? pathRef?.current : state.path;
+      if (activePath && activePath.length > 1) {
         ctx.save();
         ctx.lineWidth = 3;
         ctx.strokeStyle = '#2DD4BF';
@@ -47,13 +47,13 @@ export default function PathOverlay() {
         ctx.globalAlpha = 0.85;
 
         ctx.beginPath();
-        ctx.moveTo(path[0].x * width, path[0].y * height);
-        for (let i = 1; i < path.length; i++) {
-          ctx.lineTo(path[i].x * width, path[i].y * height);
+        ctx.moveTo(activePath[0].x * width, activePath[0].y * height);
+        for (let i = 1; i < activePath.length; i++) {
+          ctx.lineTo(activePath[i].x * width, activePath[i].y * height);
         }
         ctx.stroke();
 
-        const lastPoint = path[path.length - 1];
+        const lastPoint = activePath[activePath.length - 1];
         ctx.beginPath();
         ctx.arc(lastPoint.x * width, lastPoint.y * height, 5, 0, Math.PI * 2);
         ctx.fillStyle = '#2DD4BF';
@@ -81,7 +81,7 @@ export default function PathOverlay() {
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [state.drawMode, state.path, state.puckPosition]);
+  }, [isDrawing, pathRef, state.path, state.puckPosition]);
 
   return (
     <canvas

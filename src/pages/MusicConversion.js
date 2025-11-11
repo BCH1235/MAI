@@ -1,6 +1,6 @@
 // src/pages/MusicConversion.js
 
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { Box, Button, ButtonGroup, Container, Grid, Paper, Stack, Typography } from '@mui/material';
 import MusicNote from '@mui/icons-material/MusicNote';
 
@@ -62,6 +62,9 @@ function BeatMaker() {
       },
     },
   };
+
+  const drawingPathRef = useRef([]);
+  const [isDrawing, setIsDrawing] = useState(false);
 
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: colors.background, pt: 4, pb: 4 }}>
@@ -192,25 +195,10 @@ function BeatMaker() {
                 <BlendPadCanvas
                   onBlend={state.mode === "INTERPOLATE" ? actions.handleBlend : undefined}
                   disabled={state.mode !== "INTERPOLATE"}
+                  pathRef={drawingPathRef}
+                  onDrawingChange={setIsDrawing}
                 />
-                <PathOverlay />
-                {["A", "B", "C", "D"].map((label) => (
-                  <Box
-                    key={label}
-                    sx={{
-                      position: "absolute",
-                      fontSize: 12,
-                      color: colors.textLight,
-                      opacity: 0.85,
-                      ...(label === "A" && { left: 8, top: 8 }),
-                      ...(label === "B" && { right: 8, top: 8 }),
-                      ...(label === "C" && { left: 8, bottom: 8 }),
-                      ...(label === "D" && { right: 8, bottom: 8 }),
-                    }}
-                  >
-                    {label}: {state.cornerPresets[label]}
-                  </Box>
-                ))}
+                <PathOverlay pathRef={drawingPathRef} isDrawing={isDrawing} />
               </Box>
             </Paper>
           </Grid>
