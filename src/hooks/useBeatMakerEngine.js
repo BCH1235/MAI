@@ -146,13 +146,13 @@ export function useBeatMakerEngine() {
     const part = partRef.current;
     if (!part) return;
 
-    const currentState = stateRef.current;
     part.clear();
-    const totalSteps = PATTERN_STEPS * currentState.bars;
+    const totalSteps = PATTERN_STEPS;
+    const stepDurationSeconds = Tone.Time("1m").toSeconds() / totalSteps;
 
     for (let step = 0; step < totalSteps; step++) {
-      const time = `0:${Math.floor(step / 4)}:${step % 4}`;
-      part.add(time, { step: step % PATTERN_STEPS, index: step, totalSteps });
+      const timeSeconds = step * stepDurationSeconds;
+      part.add(timeSeconds, { step, index: step, totalSteps });
     }
   };
 
@@ -163,7 +163,7 @@ export function useBeatMakerEngine() {
         const part = new Tone.Part(async (time, note) => {
           const currentState = stateRef.current;
           let patternToPlay = currentState.pattern;
-          const totalSteps = note.totalSteps || PATTERN_STEPS * currentState.bars;
+          const totalSteps = note.totalSteps || PATTERN_STEPS;
           const stepIndex = note.index % totalSteps;
 
           if (currentState.drawMode === "PATH" && currentState.path.length > 1) {
@@ -200,7 +200,7 @@ export function useBeatMakerEngine() {
         partRef.current = part;
       }
 
-      partRef.current.loopEnd = `${state.bars}m`;
+      partRef.current.loopEnd = "1m";
       fillPartWithPattern();
       if (Tone.Transport.state !== "started") {
         Tone.Transport.start("+0.1");
@@ -212,13 +212,13 @@ export function useBeatMakerEngine() {
     return () => {
       Tone.Transport.stop();
     };
-  }, [state.isPlaying, state.bars, dispatch]);
+  }, [state.isPlaying, dispatch]);
 
   useEffect(() => {
     if (state.isPlaying) {
       fillPartWithPattern();
     }
-  }, [state.bars, state.isPlaying]);
+  }, [state.isPlaying]);
 
   useEffect(() => {
     if (!(state.path.length > 1 && state.cornerEncodings)) {
@@ -228,11 +228,12 @@ export function useBeatMakerEngine() {
     }
 
     const version = ++pathVersionRef.current;
-    const totalSteps = PATTERN_STEPS * state.bars;
+    const totalSteps = PATTERN_STEPS;
+    const denominator = Math.max(1, totalSteps - 1);
     const positions = Array(totalSteps)
       .fill(null)
       .map((_, step) => {
-        const progress = totalSteps ? step / totalSteps : 0;
+        const progress = totalSteps === 1 ? 0 : step / denominator;
         return samplePathByDistance(state.path, progress);
       });
     pathPositionsRef.current = positions;
@@ -253,7 +254,7 @@ export function useBeatMakerEngine() {
         console.error("Path decoding batch failed", error);
       }
     })();
-  }, [state.path, state.cornerEncodings, state.bars]);
+  }, [state.path, state.cornerEncodings]);
 
   // 4. UI 컴포넌트에서 사용할 액션 함수들을 정의합니다.
   const actions = useMemo(
@@ -316,12 +317,12 @@ export function useBeatMakerEngine() {
         globalActions?.addNotification?.({ type: "info", message: "WAV 파일 렌더링 중..." });
 
         try {
-          const totalDuration = Tone.Time(`${state.bars}m`).toSeconds();
+          const totalDuration = Tone.Time("1m").toSeconds();
           const audioBuffer = await Tone.Offline(async ({ transport }) => {
             transport.bpm.value = state.bpm;
             const offlineKit = await createKit({ skipToneStart: true });
             const stepDuration = Tone.Time("16n").toSeconds();
-            const totalSteps = PATTERN_STEPS * state.bars;
+            const totalSteps = PATTERN_STEPS;
 
             for (let step = 0; step < totalSteps; step++) {
               const eventTime = step * stepDuration;
@@ -356,17 +357,7 @@ export function useBeatMakerEngine() {
         }
       },
     }),
-    [
-      centerOf,
-      dispatch,
-      globalActions,
-      state.bars,
-      state.cornerEncodings,
-      state.cornerPatterns,
-      state.grid,
-      state.pattern,
-      toCell,
-    ]
+    [centerOf, dispatch, globalActions, state.cornerEncodings, state.cornerPatterns, state.grid, state.pattern, toCell]
   );
 
   // 5. 훅의 최종 반환값

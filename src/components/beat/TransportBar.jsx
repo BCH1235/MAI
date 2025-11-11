@@ -10,9 +10,7 @@ export default function TransportBar(props) {
   const {
     value,
     bpm: bpmProp,
-    bars: barsProp,
     onChangeBpm,
-    onChangeBars,
     onPlay,
     onStop,
     onClear,
@@ -39,29 +37,14 @@ export default function TransportBar(props) {
     return 96;
   }, [value?.bpm, bpmProp]);
 
-  const initialBars = useMemo(() => {
-    if (typeof value?.bars === 'number') return value.bars;
-    if (typeof barsProp === 'number') return barsProp;
-    return 2;
-  }, [value?.bars, barsProp]);
-
   const [bpmLocal, setBpmLocal] = useState(initialBpm);
-  const [barsLocal, setBarsLocal] = useState(initialBars);
 
   useEffect(() => setBpmLocal(initialBpm), [initialBpm]);
-  useEffect(() => setBarsLocal(initialBars), [initialBars]);
 
   const handleBpmChange = (e) => {
     const v = Math.max(40, Math.min(240, Number(e.target.value) || 0));
     setBpmLocal(v);
     onChangeBpm?.(v);
-  };
-
-  const handleBarsChange = (e) => {
-    const raw = Number(e.target.value) || 1;
-    const v = Math.max(1, Math.min(32, raw));
-    setBarsLocal(v);
-    onChangeBars?.(v);
   };
 
   return (
@@ -114,21 +97,6 @@ export default function TransportBar(props) {
           value={bpmLocal}
           onChange={handleBpmChange}
           inputProps={{ min: 40, max: 240 }}
-          sx={{ 
-            width: 120,
-            '& .MuiInputBase-root': { bgcolor: '#111', color: colors.text, borderRadius: 2 },
-            '& .MuiOutlinedInput-notchedOutline': { borderColor: colors.border },
-            '& .MuiInputLabel-root': { color: colors.textLight },
-            '&.Mui-focused .MuiInputLabel-root': { color: colors.accent },
-          }}
-          disabled={busy}
-        />
-        <TextField
-          label="마디"
-          type="number"
-          value={barsLocal}
-          onChange={handleBarsChange}
-          inputProps={{ min: 1, max: 32 }}
           sx={{ 
             width: 120,
             '& .MuiInputBase-root': { bgcolor: '#111', color: colors.text, borderRadius: 2 },

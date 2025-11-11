@@ -8,7 +8,6 @@ const initialState = {
   isPlaying: false,
   bpm: 120,
   currentStep: 0,
-  bars: 2,
   pattern: clonePattern(PRESETS["Rock 1"]),
 
   // --- 블렌딩 패드(그리드) 관련 ---

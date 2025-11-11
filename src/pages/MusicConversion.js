@@ -88,7 +88,6 @@ function BeatMaker() {
             <Paper sx={{ p: 2, bgcolor: colors.cardBg, border: `1px solid ${colors.border}` }}>
               <TransportBar
                 bpm={state.bpm}
-                bars={state.bars}
                 onChangeBpm={actions.setBpm}
                 onPlay={() => actions.setIsPlaying(true)}
                 onStop={() => actions.setIsPlaying(false)}
