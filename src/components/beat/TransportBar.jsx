@@ -34,17 +34,35 @@ export default function TransportBar(props) {
   const initialBpm = useMemo(() => {
     if (typeof value?.bpm === 'number') return value.bpm;
     if (typeof bpmProp === 'number') return bpmProp;
-    return 96;
+    return 60;
   }, [value?.bpm, bpmProp]);
 
-  const [bpmLocal, setBpmLocal] = useState(initialBpm);
+  const [bpmLocal, setBpmLocal] = useState(String(initialBpm));
 
-  useEffect(() => setBpmLocal(initialBpm), [initialBpm]);
+  useEffect(() => setBpmLocal(String(initialBpm)), [initialBpm]);
+
+  const commitBpm = (nextValue) => {
+    const parsed = Number(nextValue);
+    const clamped = Number.isNaN(parsed)
+      ? initialBpm
+      : Math.max(40, Math.min(240, parsed));
+    setBpmLocal(String(clamped));
+    onChangeBpm?.(clamped);
+  };
 
   const handleBpmChange = (e) => {
-    const v = Math.max(40, Math.min(240, Number(e.target.value) || 0));
-    setBpmLocal(v);
-    onChangeBpm?.(v);
+    const { value } = e.target;
+    if (/^\d*$/.test(value)) {
+      setBpmLocal(value);
+    }
+  };
+
+  const handleBpmBlur = () => {
+    if (bpmLocal === '') {
+      commitBpm(initialBpm);
+      return;
+    }
+    commitBpm(bpmLocal);
   };
 
   return (
@@ -93,10 +111,11 @@ export default function TransportBar(props) {
       <Stack direction="row" spacing={1.5} alignItems="center">
         <TextField
           label="BPM"
-          type="number"
+          type="text"
           value={bpmLocal}
           onChange={handleBpmChange}
-          inputProps={{ min: 40, max: 240 }}
+          onBlur={handleBpmBlur}
+          inputProps={{ inputMode: 'numeric', pattern: '\\d*' }}
           sx={{ 
             width: 120,
             '& .MuiInputBase-root': { bgcolor: '#111', color: colors.text, borderRadius: 2 },

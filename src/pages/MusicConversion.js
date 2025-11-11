@@ -144,7 +144,7 @@ function BeatMaker() {
                       disabled={state.isInterpolating}
                       sx={buttonStyles.contained}
                     >
-                      {state.isInterpolating ? "계산 중..." : "완료 (DONE)"}
+                      {state.isInterpolating ? "계산 중..." : "완료"}
                     </Button>
                     <Button
                       variant="outlined"

@@ -111,6 +111,15 @@ export function useBeatMakerEngine() {
     }
   }, [state.pattern, state.drawMode]);
 
+  useEffect(() => {
+    if (state.mode === "EDIT" && state.selectedCorner) {
+      const cornerPattern = state.cornerPatterns[state.selectedCorner];
+      if (cornerPattern) {
+        dispatch({ type: "SET_PATTERN", payload: clonePattern(cornerPattern) });
+      }
+    }
+  }, [state.mode, state.selectedCorner, state.cornerPatterns, dispatch]);
+
   // --- 코너 패턴이 변경되면 자동으로 인코딩 수행 ---
   useEffect(() => {
     let cancelled = false;
