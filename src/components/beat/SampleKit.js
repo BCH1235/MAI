@@ -16,8 +16,10 @@ export const SAMPLE_PATHS = {
   ride:  `${BASE}ride.mp3`,
 };
 
-export async function createKit() {
-  await Tone.start();
+export async function createKit({ skipToneStart = false } = {}) {
+  if (!skipToneStart) {
+    await Tone.start();
+  }
   const gain = new Tone.Gain(0.9).toDestination();
 
   return new Promise((resolve, reject) => {

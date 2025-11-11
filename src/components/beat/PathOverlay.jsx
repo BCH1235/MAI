@@ -1,72 +1,74 @@
+// src/components/beat/PathOverlay.jsx
+
 import React, { useEffect, useRef } from 'react';
 import { useBeatPad } from '../../state/beatPadStore';
 
 export default function PathOverlay() {
   const { state } = useBeatPad();
-  const cvsRef = useRef(null);
+  const canvasRef = useRef(null);
   const rafRef = useRef(null);
 
   useEffect(() => {
-    const cvs = cvsRef.current;
-    if (!cvs) return;
-    const ctx = cvs.getContext('2d');
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
 
-    // 마지막으로 반영한 사이즈/스케일 기억
-    let lastW = 0, lastH = 0, lastDpr = 0;
+    let lastDpr = 1;
 
     const ensureSize = () => {
-      const rect = cvs.getBoundingClientRect();
+      const rect = canvas.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
-      const needResize =
-        rect.width !== lastW || rect.height !== lastH || dpr !== lastDpr;
+      const width = Math.max(1, Math.round(rect.width * dpr));
+      const height = Math.max(1, Math.round(rect.height * dpr));
 
-      if (needResize) {
-        lastW = rect.width;
-        lastH = rect.height;
+      if (width !== canvas.width || height !== canvas.height || dpr !== lastDpr) {
+        canvas.width = width;
+        canvas.height = height;
         lastDpr = dpr;
-
-        // ★ rAF 루프에서만 캔버스 실제 픽셀 사이즈 갱신 (ResizeObserver 사용 안 함)
-        const w = Math.max(1, Math.round(rect.width * dpr));
-        const h = Math.max(1, Math.round(rect.height * dpr));
-        if (cvs.width !== w || cvs.height !== h) {
-          cvs.width = w;
-          cvs.height = h;
-          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        }
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       }
     };
 
     const draw = () => {
       ensureSize();
+      const rect = canvas.getBoundingClientRect();
+      const width = rect.width;
+      const height = rect.height;
 
-      const rect = cvs.getBoundingClientRect();
-      const w = rect.width;
-      const h = rect.height;
+      ctx.clearRect(0, 0, width, height);
 
-      ctx.clearRect(0, 0, w, h);
-
-      // DRAW 모드에서만 경로 그림
-      const pts = state.mode === 'DRAW' ? state.path : null;
-      if (pts && pts.length) {
+      const path = state.path;
+      if (state.drawMode === 'PATH' && path && path.length > 1) {
         ctx.save();
-        ctx.lineWidth = 2.5;
+        ctx.lineWidth = 3;
         ctx.strokeStyle = '#2DD4BF';
-        ctx.globalAlpha = 0.9;
         ctx.lineJoin = 'round';
         ctx.lineCap = 'round';
+        ctx.globalAlpha = 0.85;
 
         ctx.beginPath();
-        ctx.moveTo(pts[0].x * w, pts[0].y * h);
-        for (let i = 1; i < pts.length; i++) {
-          ctx.lineTo(pts[i].x * w, pts[i].y * h);
+        ctx.moveTo(path[0].x * width, path[0].y * height);
+        for (let i = 1; i < path.length; i++) {
+          ctx.lineTo(path[i].x * width, path[i].y * height);
         }
         ctx.stroke();
 
-        // 마지막 점 강조
-        const last = pts[pts.length - 1];
-        ctx.fillStyle = '#2DD4BF';
+        const lastPoint = path[path.length - 1];
         ctx.beginPath();
-        ctx.arc(last.x * w, last.y * h, 4, 0, Math.PI * 2);
+        ctx.arc(lastPoint.x * width, lastPoint.y * height, 5, 0, Math.PI * 2);
+        ctx.fillStyle = '#2DD4BF';
+        ctx.fill();
+        ctx.restore();
+      }
+
+      const puck = state.puckPosition;
+      if (puck) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(puck.x * width, puck.y * height, 8, 0, Math.PI * 2);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+        ctx.shadowBlur = 10;
         ctx.fill();
         ctx.restore();
       }
@@ -75,10 +77,24 @@ export default function PathOverlay() {
     };
 
     rafRef.current = requestAnimationFrame(draw);
+
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [state.mode, state.path]);
+  }, [state.drawMode, state.path, state.puckPosition]);
 
-  return <canvas ref={cvsRef} className="path-overlay" />;
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: '100%',
+        pointerEvents: 'none',
+        zIndex: 10,
+      }}
+    />
+  );
 }
