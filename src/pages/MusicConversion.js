@@ -98,18 +98,24 @@ function BeatMaker() {
           </Grid>
         </Grid>
 
-        <Grid container spacing={3}>
-          <Grid item xs={12} md={5}>
-            <Paper
-              sx={{
-                p: { xs: 2, md: 3 },
-                bgcolor: colors.cardBg,
-                border: `1px solid ${colors.border}`,
-                display: "flex",
-                flexDirection: "column",
-                height: "100%",
-              }}
-            >
+        <Stack
+          direction={{ xs: 'column', lg: 'row' }}
+          spacing={3}
+          alignItems={{ xs: 'stretch', lg: 'stretch' }}
+        >
+          <Paper
+            sx={{
+              p: { xs: 2, md: 3 },
+              bgcolor: colors.cardBg,
+              border: `1px solid ${colors.border}`,
+              display: 'flex',
+              flexDirection: 'column',
+              flex: { lg: '0 0 440px' },
+              width: '100%',
+              minHeight: { lg: 560 },
+              height: '100%',
+            }}
+          >
               <Typography variant="h6" sx={{ color: colors.text, mb: 2 }}>
                 패드 블렌딩
               </Typography>
@@ -175,47 +181,59 @@ function BeatMaker() {
                   </ButtonGroup>
                 </Box>
               )}
-
               <Box
                 sx={{
-                  position: "relative",
-                  width: "100%",
-                  flexGrow: 1,
-                  minHeight: 320,
+                  position: 'relative',
+                  flex: 1,
+                  minHeight: { xs: 320, md: 380 },
                   borderRadius: 2,
                   border: `1px solid ${colors.border}`,
                   backgroundImage:
-                    "linear-gradient(to right, rgba(255,255,255,0.06) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.06) 1px, transparent 1px)",
-                  backgroundSize: "10% 100%, 100% 10%",
-                  backgroundColor: "#050505",
-                  overflow: "hidden",
+                    'linear-gradient(to right, rgba(255,255,255,0.06) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.06) 1px, transparent 1px)',
+                  backgroundSize: '10% 100%, 100% 10%',
+                  backgroundColor: '#050505',
+                  overflow: 'hidden',
                 }}
               >
                 <BlendPadCanvas
-                  onBlend={state.mode === "INTERPOLATE" ? actions.handleBlend : undefined}
-                  disabled={state.mode !== "INTERPOLATE"}
+                  onBlend={state.mode === 'INTERPOLATE' ? actions.handleBlend : undefined}
+                  disabled={state.mode !== 'INTERPOLATE'}
                   pathRef={drawingPathRef}
                   onDrawingChange={setIsDrawing}
                 />
                 <PathOverlay pathRef={drawingPathRef} isDrawing={isDrawing} />
               </Box>
             </Paper>
-          </Grid>
 
           {/* 오른쪽: 드럼 시퀀서 */}
-          <Grid item xs={12} md={7}>
-            <Paper
-              sx={{
-                p: { xs: 2, md: 3 },
-                bgcolor: colors.cardBg,
-                border: `1px solid ${colors.border}`,
-                height: '100%',
-              }}
-            >
-              <BeatGrid pattern={displayedPattern} currentStep={state.currentStep} onToggle={handleToggle} />
-            </Paper>
-          </Grid>
-        </Grid>
+          <Paper
+            sx={{
+              p: { xs: 2, md: 3 },
+              bgcolor: '#111111',
+              border: `1px solid ${colors.border}`,
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              minHeight: { lg: 560 },
+              height: '100%',
+            }}
+          >
+            <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" spacing={1} sx={{ mb: 2 }}>
+              <Typography variant="h6" sx={{ color: colors.text }}>
+                비트 패턴
+              </Typography>
+              <Typography sx={{ color: colors.textLight }}>BPM {state.bpm}</Typography>
+            </Stack>
+            <Box sx={{ flexGrow: 1 }}>
+              <BeatGrid
+                pattern={displayedPattern}
+                currentStep={state.currentStep}
+                onToggle={handleToggle}
+                cellHeight={34}
+              />
+            </Box>
+          </Paper>
+        </Stack>
       </Container>
     </Box>
   );

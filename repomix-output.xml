@@ -2191,9 +2191,12 @@ export default function BlendPad({ colors, corners, onChangeCorners, children, s
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useBeatPad } from '../../state/beatPadStore';
+import { samplePathByDistance } from '../../hooks/usePathMode';
 
-export default function BlendPadCanvas({ onBlend, disabled = false }) {
+export default function BlendPadCanvas({ onBlend, disabled = false, pathRef: externalPathRef, onDrawingChange }) {
   const canvasRef = useRef(null);
+  const internalPathRef = useRef([]);
+  const pathRef = externalPathRef || internalPathRef;
   const { state, dispatch } = useBeatPad();
   const [dragging, setDragging] = useState(false);
 
@@ -2217,12 +2220,12 @@ export default function BlendPadCanvas({ onBlend, disabled = false }) {
     const handlePointerDown = (event) => {
       if (event.button === 2) return;
       setDragging(true);
+      onDrawingChange?.(true);
       canvas.setPointerCapture?.(event.pointerId);
       const coords = getXY01(event);
 
       if (state.drawMode === 'PATH') {
-        dispatch({ type: 'RESET_PATH' });
-        dispatch({ type: 'APPEND_PATH_POINT', payload: coords });
+        pathRef.current = [coords];
       } else {
         onBlend?.(coords.x, coords.y);
       }
@@ -2233,16 +2236,45 @@ export default function BlendPadCanvas({ onBlend, disabled = false }) {
       if (!dragging) return;
       const coords = getXY01(event);
       if (state.drawMode === 'PATH') {
-        dispatch({ type: 'APPEND_PATH_POINT', payload: coords });
+        pathRef.current.push(coords);
       } else {
         onBlend?.(coords.x, coords.y);
       }
     };
 
+    const finalizePath = () => {
+      const rawPath = pathRef.current || [];
+      if (rawPath.length < 2) {
+        dispatch({ type: 'RESET_PATH' });
+        return;
+      }
+
+      let totalLength = 0;
+      for (let i = 1; i < rawPath.length; i++) {
+        const p1 = rawPath[i - 1];
+        const p2 = rawPath[i];
+        totalLength += Math.hypot(p2.x - p1.x, p2.y - p1.y);
+      }
+
+      const numPoints = Math.max(100, Math.floor(totalLength * 300));
+      const smoothPath = [];
+      for (let i = 0; i < numPoints; i++) {
+        const t = numPoints === 1 ? 0 : i / (numPoints - 1);
+        smoothPath.push(samplePathByDistance(rawPath, t));
+      }
+
+      dispatch({ type: 'SET_PATH', payload: smoothPath });
+      pathRef.current = smoothPath;
+    };
+
     const handlePointerEnd = (event) => {
       if (!dragging) return;
       setDragging(false);
+      onDrawingChange?.(false);
       canvas.releasePointerCapture?.(event.pointerId);
+      if (state.drawMode === 'PATH') {
+        finalizePath();
+      }
     };
 
     canvas.addEventListener('pointerdown', handlePointerDown, { passive: false });
@@ -2256,7 +2288,7 @@ export default function BlendPadCanvas({ onBlend, disabled = false }) {
       window.removeEventListener('pointerup', handlePointerEnd);
       window.removeEventListener('pointercancel', handlePointerEnd);
     };
-  }, [dispatch, dragging, getXY01, onBlend, state.drawMode, disabled]);
+  }, [dispatch, dragging, getXY01, onBlend, state.drawMode, disabled, pathRef, onDrawingChange]);
 
   return (
     <canvas
@@ -2421,7 +2453,7 @@ export default function PadToolbar() {
 import React, { useEffect, useRef } from 'react';
 import { useBeatPad } from '../../state/beatPadStore';
 
-export default function PathOverlay() {
+export default function PathOverlay({ pathRef, isDrawing }) {
   const { state } = useBeatPad();
   const canvasRef = useRef(null);
   const rafRef = useRef(null);
@@ -2455,8 +2487,8 @@ export default function PathOverlay() {
 
       ctx.clearRect(0, 0, width, height);
 
-      const path = state.path;
-      if (state.drawMode === 'PATH' && path && path.length > 1) {
+      const activePath = isDrawing ? pathRef?.current : state.path;
+      if (activePath && activePath.length > 1) {
         ctx.save();
         ctx.lineWidth = 3;
         ctx.strokeStyle = '#2DD4BF';
@@ -2465,13 +2497,13 @@ export default function PathOverlay() {
         ctx.globalAlpha = 0.85;
 
         ctx.beginPath();
-        ctx.moveTo(path[0].x * width, path[0].y * height);
-        for (let i = 1; i < path.length; i++) {
-          ctx.lineTo(path[i].x * width, path[i].y * height);
+        ctx.moveTo(activePath[0].x * width, activePath[0].y * height);
+        for (let i = 1; i < activePath.length; i++) {
+          ctx.lineTo(activePath[i].x * width, activePath[i].y * height);
         }
         ctx.stroke();
 
-        const lastPoint = path[path.length - 1];
+        const lastPoint = activePath[activePath.length - 1];
         ctx.beginPath();
         ctx.arc(lastPoint.x * width, lastPoint.y * height, 5, 0, Math.PI * 2);
         ctx.fillStyle = '#2DD4BF';
@@ -2499,7 +2531,7 @@ export default function PathOverlay() {
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [state.drawMode, state.path, state.puckPosition]);
+  }, [isDrawing, pathRef, state.path, state.puckPosition]);
 
   return (
     <canvas
@@ -2773,9 +2805,7 @@ export default function TransportBar(props) {
   const {
     value,
     bpm: bpmProp,
-    bars: barsProp,
     onChangeBpm,
-    onChangeBars,
     onPlay,
     onStop,
     onClear,
@@ -2799,32 +2829,35 @@ export default function TransportBar(props) {
   const initialBpm = useMemo(() => {
     if (typeof value?.bpm === 'number') return value.bpm;
     if (typeof bpmProp === 'number') return bpmProp;
-    return 96;
+    return 60;
   }, [value?.bpm, bpmProp]);
 
-  const initialBars = useMemo(() => {
-    if (typeof value?.bars === 'number') return value.bars;
-    if (typeof barsProp === 'number') return barsProp;
-    return 2;
-  }, [value?.bars, barsProp]);
+  const [bpmLocal, setBpmLocal] = useState(String(initialBpm));
 
-  const [bpmLocal, setBpmLocal] = useState(initialBpm);
-  const [barsLocal, setBarsLocal] = useState(initialBars);
+  useEffect(() => setBpmLocal(String(initialBpm)), [initialBpm]);
 
-  useEffect(() => setBpmLocal(initialBpm), [initialBpm]);
-  useEffect(() => setBarsLocal(initialBars), [initialBars]);
-
-  const handleBpmChange = (e) => {
-    const v = Math.max(40, Math.min(240, Number(e.target.value) || 0));
-    setBpmLocal(v);
-    onChangeBpm?.(v);
+  const commitBpm = (nextValue) => {
+    const parsed = Number(nextValue);
+    const clamped = Number.isNaN(parsed)
+      ? initialBpm
+      : Math.max(40, Math.min(240, parsed));
+    setBpmLocal(String(clamped));
+    onChangeBpm?.(clamped);
   };
 
-  const handleBarsChange = (e) => {
-    const raw = Number(e.target.value) || 1;
-    const v = Math.max(1, Math.min(32, raw));
-    setBarsLocal(v);
-    onChangeBars?.(v);
+  const handleBpmChange = (e) => {
+    const { value } = e.target;
+    if (/^\d*$/.test(value)) {
+      setBpmLocal(value);
+    }
+  };
+
+  const handleBpmBlur = () => {
+    if (bpmLocal === '') {
+      commitBpm(initialBpm);
+      return;
+    }
+    commitBpm(bpmLocal);
   };
 
   return (
@@ -2873,25 +2906,11 @@ export default function TransportBar(props) {
       <Stack direction="row" spacing={1.5} alignItems="center">
         <TextField
           label="BPM"
-          type="number"
+          type="text"
           value={bpmLocal}
           onChange={handleBpmChange}
-          inputProps={{ min: 40, max: 240 }}
-          sx={{ 
-            width: 120,
-            '& .MuiInputBase-root': { bgcolor: '#111', color: colors.text, borderRadius: 2 },
-            '& .MuiOutlinedInput-notchedOutline': { borderColor: colors.border },
-            '& .MuiInputLabel-root': { color: colors.textLight },
-            '&.Mui-focused .MuiInputLabel-root': { color: colors.accent },
-          }}
-          disabled={busy}
-        />
-        <TextField
-          label="마디"
-          type="number"
-          value={barsLocal}
-          onChange={handleBarsChange}
-          inputProps={{ min: 1, max: 32 }}
+          onBlur={handleBpmBlur}
+          inputProps={{ inputMode: 'numeric', pattern: '\\d*' }}
           sx={{ 
             width: 120,
             '& .MuiInputBase-root': { bgcolor: '#111', color: colors.text, borderRadius: 2 },
@@ -4510,6 +4529,15 @@ export function useBeatMakerEngine() {
     }
   }, [state.pattern, state.drawMode]);
 
+  useEffect(() => {
+    if (state.mode === "EDIT" && state.selectedCorner) {
+      const cornerPattern = state.cornerPatterns[state.selectedCorner];
+      if (cornerPattern) {
+        dispatch({ type: "SET_PATTERN", payload: clonePattern(cornerPattern) });
+      }
+    }
+  }, [state.mode, state.selectedCorner, state.cornerPatterns, dispatch]);
+
   // --- 코너 패턴이 변경되면 자동으로 인코딩 수행 ---
   useEffect(() => {
     let cancelled = false;
@@ -4545,13 +4573,13 @@ export function useBeatMakerEngine() {
     const part = partRef.current;
     if (!part) return;
 
-    const currentState = stateRef.current;
     part.clear();
-    const totalSteps = PATTERN_STEPS * currentState.bars;
+    const totalSteps = PATTERN_STEPS;
+    const stepDurationSeconds = Tone.Time("1m").toSeconds() / totalSteps;
 
     for (let step = 0; step < totalSteps; step++) {
-      const time = `0:${Math.floor(step / 4)}:${step % 4}`;
-      part.add(time, { step: step % PATTERN_STEPS, index: step, totalSteps });
+      const timeSeconds = step * stepDurationSeconds;
+      part.add(timeSeconds, { step, index: step, totalSteps });
     }
   };
 
@@ -4562,7 +4590,7 @@ export function useBeatMakerEngine() {
         const part = new Tone.Part(async (time, note) => {
           const currentState = stateRef.current;
           let patternToPlay = currentState.pattern;
-          const totalSteps = note.totalSteps || PATTERN_STEPS * currentState.bars;
+          const totalSteps = note.totalSteps || PATTERN_STEPS;
           const stepIndex = note.index % totalSteps;
 
           if (currentState.drawMode === "PATH" && currentState.path.length > 1) {
@@ -4599,7 +4627,7 @@ export function useBeatMakerEngine() {
         partRef.current = part;
       }
 
-      partRef.current.loopEnd = `${state.bars}m`;
+      partRef.current.loopEnd = "1m";
       fillPartWithPattern();
       if (Tone.Transport.state !== "started") {
         Tone.Transport.start("+0.1");
@@ -4611,13 +4639,13 @@ export function useBeatMakerEngine() {
     return () => {
       Tone.Transport.stop();
     };
-  }, [state.isPlaying, state.bars, dispatch]);
+  }, [state.isPlaying, dispatch]);
 
   useEffect(() => {
     if (state.isPlaying) {
       fillPartWithPattern();
     }
-  }, [state.bars, state.isPlaying]);
+  }, [state.isPlaying]);
 
   useEffect(() => {
     if (!(state.path.length > 1 && state.cornerEncodings)) {
@@ -4627,11 +4655,12 @@ export function useBeatMakerEngine() {
     }
 
     const version = ++pathVersionRef.current;
-    const totalSteps = PATTERN_STEPS * state.bars;
+    const totalSteps = PATTERN_STEPS;
+    const denominator = Math.max(1, totalSteps - 1);
     const positions = Array(totalSteps)
       .fill(null)
       .map((_, step) => {
-        const progress = totalSteps ? step / totalSteps : 0;
+        const progress = totalSteps === 1 ? 0 : step / denominator;
         return samplePathByDistance(state.path, progress);
       });
     pathPositionsRef.current = positions;
@@ -4652,7 +4681,7 @@ export function useBeatMakerEngine() {
         console.error("Path decoding batch failed", error);
       }
     })();
-  }, [state.path, state.cornerEncodings, state.bars]);
+  }, [state.path, state.cornerEncodings]);
 
   // 4. UI 컴포넌트에서 사용할 액션 함수들을 정의합니다.
   const actions = useMemo(
@@ -4715,12 +4744,12 @@ export function useBeatMakerEngine() {
         globalActions?.addNotification?.({ type: "info", message: "WAV 파일 렌더링 중..." });
 
         try {
-          const totalDuration = Tone.Time(`${state.bars}m`).toSeconds();
+          const totalDuration = Tone.Time("1m").toSeconds();
           const audioBuffer = await Tone.Offline(async ({ transport }) => {
             transport.bpm.value = state.bpm;
             const offlineKit = await createKit({ skipToneStart: true });
             const stepDuration = Tone.Time("16n").toSeconds();
-            const totalSteps = PATTERN_STEPS * state.bars;
+            const totalSteps = PATTERN_STEPS;
 
             for (let step = 0; step < totalSteps; step++) {
               const eventTime = step * stepDuration;
@@ -4755,17 +4784,7 @@ export function useBeatMakerEngine() {
         }
       },
     }),
-    [
-      centerOf,
-      dispatch,
-      globalActions,
-      state.bars,
-      state.cornerEncodings,
-      state.cornerPatterns,
-      state.grid,
-      state.pattern,
-      toCell,
-    ]
+    [centerOf, dispatch, globalActions, state.cornerEncodings, state.cornerPatterns, state.grid, state.pattern, toCell]
   );
 
   // 5. 훅의 최종 반환값
@@ -6087,7 +6106,7 @@ export default Library;
 <file path="src/pages/MusicConversion.js">
 // src/pages/MusicConversion.js
 
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { Box, Button, ButtonGroup, Container, Grid, Paper, Stack, Typography } from '@mui/material';
 import MusicNote from '@mui/icons-material/MusicNote';
 
@@ -6150,6 +6169,9 @@ function BeatMaker() {
     },
   };
 
+  const drawingPathRef = useRef([]);
+  const [isDrawing, setIsDrawing] = useState(false);
+
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: colors.background, pt: 4, pb: 4 }}>
       <Container maxWidth="xl">
@@ -6172,7 +6194,6 @@ function BeatMaker() {
             <Paper sx={{ p: 2, bgcolor: colors.cardBg, border: `1px solid ${colors.border}` }}>
               <TransportBar
                 bpm={state.bpm}
-                bars={state.bars}
                 onChangeBpm={actions.setBpm}
                 onPlay={() => actions.setIsPlaying(true)}
                 onStop={() => actions.setIsPlaying(false)}
@@ -6229,7 +6250,7 @@ function BeatMaker() {
                       disabled={state.isInterpolating}
                       sx={buttonStyles.contained}
                     >
-                      {state.isInterpolating ? "계산 중..." : "완료 (DONE)"}
+                      {state.isInterpolating ? "계산 중..." : "완료"}
                     </Button>
                     <Button
                       variant="outlined"
@@ -6279,25 +6300,10 @@ function BeatMaker() {
                 <BlendPadCanvas
                   onBlend={state.mode === "INTERPOLATE" ? actions.handleBlend : undefined}
                   disabled={state.mode !== "INTERPOLATE"}
+                  pathRef={drawingPathRef}
+                  onDrawingChange={setIsDrawing}
                 />
-                <PathOverlay />
-                {["A", "B", "C", "D"].map((label) => (
-                  <Box
-                    key={label}
-                    sx={{
-                      position: "absolute",
-                      fontSize: 12,
-                      color: colors.textLight,
-                      opacity: 0.85,
-                      ...(label === "A" && { left: 8, top: 8 }),
-                      ...(label === "B" && { right: 8, top: 8 }),
-                      ...(label === "C" && { left: 8, bottom: 8 }),
-                      ...(label === "D" && { right: 8, bottom: 8 }),
-                    }}
-                  >
-                    {label}: {state.cornerPresets[label]}
-                  </Box>
-                ))}
+                <PathOverlay pathRef={drawingPathRef} isDrawing={isDrawing} />
               </Box>
             </Paper>
           </Grid>
@@ -7651,9 +7657,8 @@ const BeatPadContext = createContext(null);
 const initialState = {
   // --- 재생 및 시퀀서 관련 ---
   isPlaying: false,
-  bpm: 120,
+  bpm: 60,
   currentStep: 0,
-  bars: 2,
   pattern: clonePattern(PRESETS["Rock 1"]),
 
   // --- 블렌딩 패드(그리드) 관련 ---
@@ -7721,6 +7726,9 @@ function reducer(state, action) {
 
     case "APPEND_PATH_POINT":
       return { ...state, path: [...state.path, action.payload] };
+
+    case "SET_PATH":
+      return { ...state, path: action.payload };
 
     case "SET_CORNER_PRESET": {
       const { corner, presetName } = action.payload;
