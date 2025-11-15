@@ -1,9 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
-  Container, Box, Typography, Paper, Button, Grid, Chip, Alert, IconButton, Slider
+  Container, Box, Typography, Paper, Button, Grid, Chip, Alert, IconButton, Slider,
+  Dialog, DialogTitle, DialogContent, List, ListItem, ListItemButton, ListItemIcon, ListItemText
 } from '@mui/material';
 import {
-  CheckCircle, PlayArrow, Pause, Download, Refresh, Share, Home, LibraryMusic, VolumeUp, BookmarkBorder
+  CheckCircle, PlayArrow, Pause, Download, Refresh, Share, Home, LibraryMusic, VolumeUp, BookmarkBorder,
+  ContentCopy, Twitter, Facebook
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 
@@ -11,6 +13,13 @@ import { useMusicContext } from '../context/MusicContext';
 import { GENRE_OPTIONS } from '../components/common/GenreSelector';
 import { MOOD_OPTIONS } from '../components/common/MoodSelector';
 import AudioWaveform from '../components/common/AudioWaveform';
+import { addMusicToLibrary } from '../services/libraryApi';
+import { 
+  uploadMusicToStorage, 
+  isFirebaseStorageUrl, 
+  isLocalServerUrl 
+} from '../services/storageApi';
+import { loadScoreResultFromCache } from '../utils/resultCache';
 
 const ResultPage = () => {
   const navigate = useNavigate();
@@ -20,22 +29,7 @@ const ResultPage = () => {
   console.log('=== ResultPage 디버깅 ===');
   console.log('전체 state:', state);
   console.log('state.result:', state.result);
-  console.log('state.generation:', state.generation);
-  console.log('=== ResultPage 상세 디버깅 ===');
-  console.log('전체 state:', JSON.stringify(state, null, 2));
-  if (state.result) {
-    console.log('state.result 키들:', Object.keys(state.result));
-    console.log('state.result.convertedMusic:', state.result.convertedMusic);
-    console.log('state.result.generatedMusic:', state.result.generatedMusic);
-  }
-  
-  if (state.generation) {
-    console.log('state.generation 키들:', Object.keys(state.generation));
-    console.log('state.generation.generatedMusic:', state.generation.generatedMusic);
-  }
-  
-  console.log('actions.setResult 함수:', typeof actions.setResult);
-  console.log('================================');
+  console.log('state.auth.user:', state.auth.user);
 
   // 오디오 제어용
   const audioRef = useRef(null);
@@ -43,47 +37,41 @@ const ResultPage = () => {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(180);
   const [volume, setVolume] = useState(70);
+  const [isSaving, setIsSaving] = useState(false);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [publicUrl, setPublicUrl] = useState(null); // 변환된 공용 URL 저장
+  const [isUploading, setIsUploading] = useState(false); // 업로드 중 상태
+  const [uploadError, setUploadError] = useState(null); // 업로드 실패 에러
+  const user = state.auth.user; // 사용자 정보
 
-  // 결과 데이터 (result > generation 순으로 조회)
+  const cachedResult = useMemo(() => loadScoreResultFromCache(), []);
+  const cachedMusicData = cachedResult?.convertedMusic || cachedResult?.generatedMusic || null;
+
+  // 결과 데이터 (result > generation > cache)
   const generatedFromResult = state.result?.generatedMusic;
   const convertedFromResult = state.result?.convertedMusic;
   const generatedFromGeneration = state.generation?.generatedMusic;
-
-  console.log('generatedFromResult:', generatedFromResult);
-  console.log('convertedFromResult:', convertedFromResult);
-  console.log('generatedFromGeneration:', generatedFromGeneration);
 
   // localStorage 확인 추가
   const musicData =
     generatedFromResult ||
     convertedFromResult ||
     generatedFromGeneration ||
-    (() => {
-      const stored = localStorage.getItem('scoreGeneratedMusic');
-      if (stored) {
-        console.log('localStorage에서 음악 데이터 로드:', JSON.parse(stored));
-        // 사용 후 삭제
-        localStorage.removeItem('scoreGeneratedMusic');
-        return JSON.parse(stored);
-      }
-      return null;
-    })();
+    cachedMusicData;
 
   console.log('최종 musicData:', musicData);
 
   const audioUrl = musicData?.audioUrl || '';
-  const isConversion = !!(state.result?.convertedMusic);
+  const isConversion = !!(state.result?.convertedMusic || musicData?.type === 'score-generated' || musicData?.type === 'score-audio');
 
-  // 색상 테마(원본 유지)
+  // 색상 테마
   const colors = {
     background: '#0A0A0A', cardBg: '#1A1A1A', primary: '#50E3C2',
     secondary: '#40D9B8', accent: '#2DD4BF', text: '#FFFFFF',
     textLight: '#CCCCCC', border: '#333333', shadow: 'rgba(80, 227, 194, 0.3)'
   };
 
-  // ------- 훅은 항상 호출되도록! (조건부 호출 금지) -------
-
-  // 오디오 이벤트 연결 + 소스 변경
+  // 오디오 이벤트 연결
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -110,8 +98,6 @@ const ResultPage = () => {
   useEffect(() => {
     if (audioRef.current) audioRef.current.volume = volume / 100;
   }, [volume]);
-
-  // -----------------------------------------------------
 
   const getGenreInfo = (genreId) =>
     GENRE_OPTIONS.find((g) => g.id === genreId) || { label: genreId, color: '#6366F1' };
@@ -147,6 +133,65 @@ const ResultPage = () => {
     }
   };
 
+  const getPublicUrl = async () => {
+    // 1. 이미 변환된 URL이 state에 있으면 즉시 반환
+    if (publicUrl) {
+      return publicUrl;
+    }
+
+    // 2. musicData나 audioUrl이 없으면 에러
+    if (!musicData || !musicData.audioUrl) {
+      throw new Error('공유할 오디오 데이터가 없습니다.');
+    }
+
+    const localUrl = musicData.audioUrl;
+
+    // 3. 이미 Firebase Storage URL이면 (예: 라이브러리에서 재생)
+    if (isFirebaseStorageUrl(localUrl)) {
+      setPublicUrl(localUrl); // state에 저장
+      return localUrl;
+    }
+
+    // 4. 로컬 URL(127.0.0.1)이 아니면 (예: Replicate URL)
+    if (!isLocalServerUrl(localUrl) && !localUrl.startsWith('/')) {
+      // Replicate 같은 외부 URL도 그대로 사용
+      setPublicUrl(localUrl);
+      return localUrl;
+    }
+
+    // 5. 로컬 URL이므로 Firebase Storage에 업로드
+    if (!user) {
+      throw new Error('파일 업로드를 위해 로그인이 필요합니다.');
+    }
+
+    console.log('로컬 URL을 Firebase Storage로 업로드 시작...', localUrl);
+    setUploadError(null);
+    setIsUploading(true); // 업로드 시작 상태
+
+    try {
+      const fileName = musicData.title?.replace(/[^a-zA-Z0-9.-]/g, '_') || 'music';
+      const fileType = musicData.type === 'beat' ? 'beats' : 'tracks';
+
+      // storageApi.js의 함수 사용
+      const newPublicUrl = await uploadMusicToStorage(
+        user.uid,
+        localUrl,
+        `${fileName}.wav`, // 파일명 (server.py는 wav를 생성함)
+        fileType
+      );
+
+      setPublicUrl(newPublicUrl); // state에 저장
+      return newPublicUrl;
+
+    } catch (error) {
+      console.error('Firebase Storage 업로드 실패:', error);
+      setUploadError(error.message);
+      throw new Error('파일을 Storage에 업로드하지 못했습니다.');
+    } finally {
+      setIsUploading(false); // 업로드 종료 상태
+    }
+  };
+
   const handleTimeChange = (e, newValue) => {
     setCurrentTime(newValue);
     if (audioRef.current) audioRef.current.currentTime = newValue;
@@ -159,7 +204,8 @@ const ResultPage = () => {
     try {
       const a = document.createElement('a');
       a.href = audioUrl;
-      a.download = (musicData.title || 'music') + '.mp3';
+      const extension = audioUrl.endsWith('.wav') ? 'wav' : 'mp3';
+      a.download = `${musicData.title || 'music'}.${extension}`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -169,30 +215,165 @@ const ResultPage = () => {
     }
   };
 
-  const handleShare = () =>
-    actions.addNotification?.({ type: 'info', message: '공유 기능은 추후 업데이트될 예정입니다.' });
+  const handleShare = () => {
+    setShareDialogOpen(true);
+  };
 
-  const handleSaveToLibrary = () => {
-    actions.addToLibrary?.(musicData);
-    actions.addNotification?.({ type: 'success', message: '라이브러리에 추가되었습니다.' });
+  const handleCloseShareDialog = () => {
+    setShareDialogOpen(false);
+  };
+
+  const handleShareOption = async (option) => {
+    let fileUrl;
+    try {
+      // 1. 공용 URL 가져오기 시도
+      fileUrl = await getPublicUrl();
+    } catch (error) {
+      // 2. 실패 시 알림 (예: 로그인이 안 되어 업로드 불가)
+      actions.addNotification?.({ 
+        type: 'error', 
+        message: `공유 링크 생성 실패: ${error.message}`
+      });
+      return; // 함수 종료
+    }
+    const shareText = `"${musicData.title}" - AI로 생성한 음악`;
+    const fileName = `${musicData.title}.${audioUrl.endsWith('.wav') ? 'wav' : 'mp3'}`;
+    
+    switch (option) {
+      case 'facebook':
+        const facebookUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(fileUrl)}`;
+        window.open(facebookUrl, '_blank', 'width=800,height=600');
+        actions.addNotification?.({ 
+          type: 'success', 
+          message: 'Facebook 공유 창이 열렸습니다!' 
+        });
+        break;
+        
+      case 'twitter':
+        // X (트위터) - 파일 URL과 함께 공유
+        const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText + '\n' + fileUrl)}`;
+        window.open(twitterUrl, '_blank', 'width=800,height=600');
+        actions.addNotification?.({ 
+          type: 'success', 
+          message: 'X(트위터)로 공유 창이 열렸습니다! 파일 링크가 포함되어 있습니다.' 
+        });
+        break;
+        
+      case 'copy':
+        // 파일 링크 복사
+        try {
+          await navigator.clipboard.writeText(fileUrl);
+          actions.addNotification?.({ 
+            type: 'success', 
+            message: '파일 링크가 클립보드에 복사되었습니다!' 
+          });
+        } catch (error) {
+          // 복사 실패 시 수동으로 선택하도록 유도
+          const textArea = document.createElement('textarea');
+          textArea.value = fileUrl;
+          document.body.appendChild(textArea);
+          textArea.select();
+          try {
+            document.execCommand('copy');
+            actions.addNotification?.({ type: 'success', message: '파일 링크가 복사되었습니다!' });
+          } catch (err) {
+            actions.addNotification?.({ type: 'error', message: '링크 복사에 실패했습니다.' });
+          }
+          document.body.removeChild(textArea);
+        }
+        break;
+
+      case 'download':
+        // 파일 다운로드
+        try {
+          const a = document.createElement('a');
+          a.href = fileUrl;
+          a.download = fileName;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          actions.addNotification?.({ 
+            type: 'success', 
+            message: '파일 다운로드가 시작되었습니다!' 
+          });
+        } catch (error) {
+          actions.addNotification?.({ 
+            type: 'error', 
+            message: '다운로드에 실패했습니다.' 
+          });
+        }
+        break;
+        
+      default:
+        break;
+    }
+    
+    handleCloseShareDialog();
+  };
+
+  const handleSaveToLibrary = async () => {
+    //const user = state.auth.user;
+    
+    if (!user) {
+      actions.addNotification?.({ type: 'error', message: '로그인이 필요합니다.' });
+      return;
+    }
+    if (!musicData) {
+      actions.addNotification?.({ type: 'error', message: '저장할 음악 데이터가 없습니다.' });
+      return;
+    }
+
+    setIsSaving(true);
+    
+    try {
+      // 1. 저장 전, 공용 URL을 먼저 확보
+      const finalAudioUrl = await getPublicUrl();
+
+      // 2. musicData의 audioUrl을 공용 URL로 교체하여 새 객체 생성
+      const dataToSave = {
+        ...musicData,
+        audioUrl: finalAudioUrl,
+        // (만약 Replicate URL이었다면) 원본 임시 URL도 백업
+        sourceUrl: (musicData.audioUrl !== finalAudioUrl) ? musicData.audioUrl : null,
+      };
+
+      // 3. Firebase에 *수정된 데이터(dataToSave)*를 저장
+      // [기존: addMusicToLibrary(user.uid, musicData)]
+      const docId = await addMusicToLibrary(user.uid, dataToSave);
+      
+      // 4. Context에도 *수정된 데이터(dataToSave)*를 추가
+      // (ID가 없을 경우를 대비해 docId도 포함)
+      // [기존: actions.addToLibrary?.(musicData)]
+      actions.addToLibrary?.({ ...dataToSave, id: musicData.id || docId });
+      
+      actions.addNotification?.({ type: 'success', message: '라이브러리에 추가되었습니다.' });
+      
+      console.log('라이브러리 저장 성공 (공용 URL):', dataToSave);
+    } catch (error) {
+      console.error('라이브러리 저장 실패:', error);
+      
+      if (error.message?.includes('already exists')) {
+        actions.addNotification?.({ type: 'info', message: '이미 라이브러리에 있는 음악입니다.' });
+      } else {
+        actions.addNotification?.({ type: 'error', message: `라이브러리 저장 실패: ${error.message}` });
+      }
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleRegenerate = () => {
     if (state.result?.generatedMusic || state.generation?.generatedMusic) navigate('/generate');
+    else if (musicData?.type === 'score-generated' || musicData?.type === 'score-audio') navigate('/score-to-music');
     else navigate('/convert');
   };
 
   const hasMusic = !!(musicData && audioUrl);
 
-  console.log('audioUrl:', audioUrl);
-  console.log('hasMusic:', hasMusic);
-  console.log('=====================');
-
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: colors.background }}>
       <Container maxWidth="lg" sx={{ py: 6 }}>
         {!hasMusic ? (
-          // ===== fallback (이전의 early return을 JSX로 이동) =====
           <Box sx={{ textAlign: 'center' }}>
             <Alert severity="warning" sx={{ mb: 3 }}>
               표시할 음악 데이터가 없습니다.
@@ -202,22 +383,25 @@ const ResultPage = () => {
             </Button>
           </Box>
         ) : (
-          // ================= 정상 결과 화면 (디자인 유지) =================
           <>
             {/* 헤더 */}
             <Box sx={{ mb: 6, textAlign: 'center' }}>
               <CheckCircle sx={{ fontSize: '4rem', color: colors.accent, mb: 2 }} />
               <Typography variant="h3" component="h1" sx={{ fontWeight: 600, color: colors.text, mb: 1, letterSpacing: '-0.02em' }}>
-                {isConversion ? '음악 변환 완료' : '음악 생성 완료'}
+                {musicData.type === 'score-generated' || musicData.type === 'score-audio' 
+                  ? '악보 연주 완료' 
+                  : isConversion ? '음악 변환 완료' : '음악 생성 완료'}
               </Typography>
               <Typography variant="h6" color={colors.textLight} sx={{ fontWeight: 400, opacity: 0.8 }}>
-                {isConversion ? '음악이 성공적으로 변환되었습니다' : '새로운 음악이 성공적으로 생성되었습니다'}
+                {musicData.type === 'score-generated' || musicData.type === 'score-audio'
+                  ? '악보가 성공적으로 연주되었습니다'
+                  : isConversion ? '음악이 성공적으로 변환되었습니다' : '새로운 음악이 성공적으로 생성되었습니다'}
               </Typography>
             </Box>
 
             <Grid container spacing={4}>
               {/* 메인 컨텐츠 */}
-              <Grid item xs={12} lg={9}>
+              <Grid xs={12} lg={9}>
                 {/* 플레이어 카드 */}
                 <Paper elevation={0} sx={{ p: 4, border: `1px solid ${colors.border}`, borderRadius: 2, mb: 3, bgcolor: colors.cardBg, color: colors.text }}>
                   <Box sx={{ mb: 3 }}>
@@ -225,7 +409,9 @@ const ResultPage = () => {
                       {musicData.title}
                     </Typography>
                     <Typography variant="body1" sx={{ opacity: 0.8, color: colors.textLight }}>
-                      {isConversion
+                      {musicData.type === 'score-generated' || musicData.type === 'score-audio'
+                        ? `${musicData.originalFile} 파일을 오디오로 변환했습니다.`
+                        : isConversion
                         ? `${musicData.originalFile}을(를) ${musicData.targetGenre} 스타일로 변환했습니다.`
                         : '음악이 성공적으로 생성되었습니다.'}
                     </Typography>
@@ -294,7 +480,6 @@ const ResultPage = () => {
                     </Box>
                   </Box>
 
-                  {/* 실제 오디오 (숨김) */}
                   <audio ref={audioRef} src={audioUrl} preload="auto" style={{ display: 'none' }} />
                 </Paper>
 
@@ -305,7 +490,7 @@ const ResultPage = () => {
                   </Typography>
 
                   <Grid container spacing={3}>
-                    <Grid item xs={12} sm={6}>
+                    <Grid xs={12} sm={6}>
                       <Typography variant="subtitle2" sx={{ mb: 1, color: colors.textLight }}>
                         {isConversion ? '변환된 장르' : '장르'}
                       </Typography>
@@ -329,19 +514,8 @@ const ResultPage = () => {
                       </Box>
                     </Grid>
 
-                    {isConversion && musicData.intensity && (
-                      <Grid item xs={12} sm={6}>
-                        <Typography variant="subtitle2" sx={{ mb: 1, color: colors.textLight }}>
-                          변환 강도
-                        </Typography>
-                        <Typography variant="body2" color={colors.text}>
-                          {musicData.intensity}/5
-                        </Typography>
-                      </Grid>
-                    )}
-
                     {!isConversion && musicData.moods && musicData.moods.length > 0 && (
-                      <Grid item xs={12} sm={6}>
+                      <Grid xs={12} sm={6}>
                         <Typography variant="subtitle2" sx={{ mb: 1, color: colors.textLight }}>
                           분위기
                         </Typography>
@@ -366,7 +540,7 @@ const ResultPage = () => {
                       </Grid>
                     )}
 
-                    <Grid item xs={12} sm={6}>
+                    <Grid xs={12} sm={6}>
                       <Typography variant="subtitle2" sx={{ mb: 1, color: colors.textLight }}>
                         길이
                       </Typography>
@@ -375,7 +549,7 @@ const ResultPage = () => {
                       </Typography>
                     </Grid>
 
-                    <Grid item xs={12} sm={6}>
+                    <Grid xs={12} sm={6}>
                       <Typography variant="subtitle2" sx={{ mb: 1, color: colors.textLight }}>
                         생성 시간
                       </Typography>
@@ -388,13 +562,27 @@ const ResultPage = () => {
               </Grid>
 
               {/* 사이드바 */}
-              <Grid item xs={12} lg={3}>
+              <Grid xs={12} lg={3}>
                 <Box sx={{ position: 'sticky', top: 24 }}>
                   <Paper elevation={0} sx={{ p: 4, border: `1px solid ${colors.border}`, borderRadius: 2, bgcolor: colors.cardBg, minHeight: '600px', display: 'flex', flexDirection: 'column' }}>
                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1 }}>
-                      <Button fullWidth variant="contained" startIcon={<BookmarkBorder />} onClick={handleSaveToLibrary}
-                        sx={{ bgcolor: colors.accent, color: colors.background, fontWeight: 600, textTransform: 'none', py: 2, '&:hover': { bgcolor: colors.text } }}>
-                        라이브러리에 저장
+                      <Button 
+                        fullWidth 
+                        variant="contained" 
+                        startIcon={<BookmarkBorder />} 
+                        onClick={handleSaveToLibrary}
+                        disabled={isSaving || !state.auth.user}
+                        sx={{ 
+                          bgcolor: colors.accent, 
+                          color: colors.background, 
+                          fontWeight: 600, 
+                          textTransform: 'none', 
+                          py: 2, 
+                          '&:hover': { bgcolor: colors.text },
+                          '&:disabled': { bgcolor: colors.border, color: colors.textLight }
+                        }}
+                      >
+                        {isSaving ? '저장 중...' : !state.auth.user ? '로그인 필요' : '라이브러리에 저장'}
                       </Button>
 
                       <Button fullWidth variant="outlined" startIcon={<Download />} onClick={handleDownload}
@@ -402,9 +590,23 @@ const ResultPage = () => {
                         다운로드
                       </Button>
 
-                      <Button fullWidth variant="outlined" startIcon={<Share />} onClick={handleShare}
-                        sx={{ color: colors.text, borderColor: colors.border, fontWeight: 600, textTransform: 'none', py: 2, '&:hover': { bgcolor: colors.accent, borderColor: colors.accent, color: colors.background } }}>
-                        공유하기
+                      <Button
+                        fullWidth
+                        variant="outlined"
+                        startIcon={<Share />}
+                        onClick={handleShare}
+                        disabled={isUploading}
+                        sx={{
+                          color: colors.text,
+                          borderColor: colors.border,
+                          fontWeight: 600,
+                          textTransform: 'none',
+                          py: 2,
+                          '&:hover': { bgcolor: colors.accent, borderColor: colors.accent, color: colors.background },
+                          '&:disabled': { opacity: 0.6 }
+                        }}
+                      >
+                        {isUploading ? '링크 준비 중...' : '공유하기'}
                       </Button>
 
                       <Button fullWidth variant="outlined" startIcon={<Refresh />} onClick={handleRegenerate}
@@ -429,6 +631,96 @@ const ResultPage = () => {
           </>
         )}
       </Container>
+
+      {/* 공유 다이얼로그 */}
+      <Dialog 
+        open={shareDialogOpen} 
+        onClose={handleCloseShareDialog}
+        PaperProps={{
+          sx: {
+            bgcolor: colors.cardBg,
+            border: `1px solid ${colors.border}`,
+            borderRadius: 2,
+            minWidth: 300
+          }
+        }}
+      >
+        <DialogTitle sx={{ color: colors.text, borderBottom: `1px solid ${colors.border}` }}>
+          공유하기
+        </DialogTitle>
+        <DialogContent sx={{ p: 0 }}>
+          {isUploading && (
+            <Box sx={{ px: 3, py: 2 }}>
+              <Alert severity="info" sx={{ bgcolor: 'rgba(80, 227, 194, 0.1)', border: '1px solid rgba(80, 227, 194, 0.3)' }}>
+                파일을 업로드하여 공유 링크를 만드는 중입니다...
+              </Alert>
+            </Box>
+          )}
+          {uploadError && (
+            <Box sx={{ px: 3, py: 2 }}>
+              <Alert severity="error">
+                {uploadError}
+              </Alert>
+            </Box>
+          )}
+          <List>
+            <ListItem disablePadding>
+              <ListItemButton 
+                onClick={() => handleShareOption('facebook')} // 'instagram' -> 'facebook'
+                sx={{ 
+                  py: 2,
+                  '&:hover': { bgcolor: colors.border }
+                }}
+              >
+                <ListItemIcon sx={{ minWidth: 48 }}>
+                  {/* Instagram 아이콘 -> Facebook 아이콘 */}
+                  <Facebook sx={{ color: '#1877F2', fontSize: 32 }} /> 
+                </ListItemIcon>
+                <ListItemText 
+                  primary="Facebook" // 'Instagram' -> 'Facebook'
+                  sx={{ '& .MuiListItemText-primary': { color: colors.text } }}
+                />
+              </ListItemButton>
+            </ListItem>
+
+            <ListItem disablePadding>
+              <ListItemButton 
+                onClick={() => handleShareOption('twitter')}
+                sx={{ 
+                  py: 2,
+                  '&:hover': { bgcolor: colors.border }
+                }}
+              >
+                <ListItemIcon sx={{ minWidth: 48 }}>
+                  <Twitter sx={{ color: '#1DA1F2', fontSize: 32 }} />
+                </ListItemIcon>
+                <ListItemText 
+                  primary="X" 
+                  sx={{ '& .MuiListItemText-primary': { color: colors.text } }}
+                />
+              </ListItemButton>
+            </ListItem>
+
+            <ListItem disablePadding>
+              <ListItemButton 
+                onClick={() => handleShareOption('copy')}
+                sx={{ 
+                  py: 2,
+                  '&:hover': { bgcolor: colors.border }
+                }}
+              >
+                <ListItemIcon sx={{ minWidth: 48 }}>
+                  <ContentCopy sx={{ color: colors.accent, fontSize: 32 }} />
+                </ListItemIcon>
+                <ListItemText 
+                  primary="링크 복사" 
+                  sx={{ '& .MuiListItemText-primary': { color: colors.text } }}
+                />
+              </ListItemButton>
+            </ListItem>
+          </List>
+        </DialogContent>
+      </Dialog>
     </Box>
   );
 };

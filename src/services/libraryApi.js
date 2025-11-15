@@ -9,10 +9,10 @@ import {
   setDoc,
   serverTimestamp,
   getDoc,
+  updateDoc,
 } from 'firebase/firestore';
 
 import { db } from '../lib/firebase';
-import { uploadMusicToStorage, isFirebaseStorageUrl } from './storageApi';
 
 const COLLECTION_TRACKS = 'tracks';
 const COLLECTION_BEATS = 'beats';
@@ -168,6 +168,39 @@ export async function removeMusicFromLibrary(userId, musicId, musicType = 'track
   console.log(`Music removed from library: ${musicId}`);
 }
 
+/**
+ * 음악의 즐겨찾기 상태를 설정합니다.
+ * @param {string} userId - 사용자 ID
+ * @param {string} musicId - 음악 ID
+ * @param {string} musicType - 음악 타입 ('track' 또는 'beat')
+ * @param {boolean} newFavoriteStatus - 새로운 즐겨찾기 상태 (true/false)
+ */
+export async function setFavoriteStatus(userId, musicId, musicType, newFavoriteStatus) {
+  if (!userId || !musicId) {
+    throw new Error('User ID and Music ID are required');
+  }
+
+  const collectionName = musicType === 'beat' ? COLLECTION_BEATS : COLLECTION_TRACKS;
+  const docRef = doc(db, collectionName, musicId);
+
+  // (보안) 소유권 확인
+  const docSnap = await getDoc(docRef);
+  if (!docSnap.exists()) {
+    throw new Error('Music not found');
+  }
+  const data = docSnap.data();
+  if (data.ownerId !== userId) {
+    throw new Error('You do not have permission to modify this music');
+  }
+
+  // 'isFavorite' 필드만 업데이트합니다.
+  await updateDoc(docRef, {
+    isFavorite: newFavoriteStatus
+  });
+
+  console.log(`Music favorite status updated: ${musicId} -> ${newFavoriteStatus}`);
+}
+
 export function getTrackDocRef(trackId) {
   return doc(db, COLLECTION_TRACKS, trackId);
 }
@@ -176,10 +209,13 @@ export function getBeatDocRef(beatId) {
   return doc(db, COLLECTION_BEATS, beatId);
 }
 
-export default {
+const libraryApi = {
   subscribeToUserLibrary,
   addMusicToLibrary,
   removeMusicFromLibrary,
+  setFavoriteStatus,
   getTrackDocRef,
   getBeatDocRef,
 };
+
+export default libraryApi;

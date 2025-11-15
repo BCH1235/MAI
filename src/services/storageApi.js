@@ -101,9 +101,11 @@ export function isLocalServerUrl(url) {
   return url && (url.includes('127.0.0.1') || url.includes('localhost'));
 }
 
-export default {
+const storageApi = {
   uploadMusicToStorage,
   deleteFileFromStorage,
   isFirebaseStorageUrl,
   isLocalServerUrl,
 };
+
+export default storageApi;

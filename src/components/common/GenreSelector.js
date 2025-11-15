@@ -1,10 +1,5 @@
 import React from 'react';
-import {
-  Box,
-  Typography,
-  Chip,
-  Alert
-} from '@mui/material';
+import { Box, Chip } from '@mui/material';
 
 // 장르 옵션들
 export const GENRE_OPTIONS = [

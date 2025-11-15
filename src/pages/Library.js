@@ -145,12 +145,15 @@ const Library = () => {
     }
   };
 
-  const handleToggleFavorite = (musicId) => {
-    // TODO: Firebase에서 즐겨찾기 토글 기능 구현 필요
-    actions.addNotification?.({
-      type: 'info',
-      message: '즐겨찾기 기능은 곧 추가될 예정입니다.'
-    });
+  const handleToggleFavorite = (music) => {
+    // [기존 alert 로직 삭제]
+    if (!music || !music.id) return;
+    
+    // music 객체에서 type을 추론합니다.
+    const musicType = music.type === 'beat' ? 'beat' : 'track';
+    
+    // context action을 호출합니다.
+    actions.toggleFavorite?.(music.id, musicType, !!music.isFavorite);
   };
 
   // 색상 테마
@@ -432,11 +435,11 @@ const Library = () => {
                       />
                       <IconButton
                         size="small"
-                        onClick={() => handleToggleFavorite(music.id)}
+                        onClick={() => handleToggleFavorite(music)}
                         sx={{ 
-                          color: music.isFavorite ? '#FFD700' : colors.textLight,
-                          '&:hover': {
-                            bgcolor: music.isFavorite ? '#FFF8E1' : colors.border
+                          color: music.isFavorite ? '#FFD700' : colors.textLight, 
+                    '&:hover': {
+                      bgcolor: music.isFavorite ? 'rgba(255, 215, 0, 0.1)' : colors.border
                           }
                         }}
                       >

@@ -1,6 +1,6 @@
 // src/hooks/useBeatMakerEngine.js
 
-import { useEffect, useRef, useMemo } from "react";
+import { useEffect, useRef, useMemo, useCallback } from "react";
 import { useBeatPad } from "../state/beatPadStore";
 import * as Tone from "tone";
 import { createKit } from "../components/beat/SampleKit";
@@ -60,8 +60,6 @@ export function useBeatMakerEngine() {
   const lastManualPatternRef = useRef(state.pattern);
   const wasPathPlayingRef = useRef(false);
   const blendRequestRef = useRef(0);
-  const lastVaeCall = useRef(0);
-  const VAE_DEBOUNCE_DELAY = 100;
 
   // --- VAE 모델 로딩 ---
   useEffect(() => {
@@ -75,7 +73,7 @@ export function useBeatMakerEngine() {
     const initAudio = async () => {
       await Tone.start();
       kitRef.current = await createKit();
-      Tone.Transport.bpm.value = state.bpm;
+      Tone.Transport.bpm.value = stateRef.current.bpm;
     };
     initAudio();
 
@@ -160,14 +158,14 @@ export function useBeatMakerEngine() {
     return nextTime;
   };
 
-  const resetLastTriggerTimes = () => {
+  const resetLastTriggerTimes = useCallback(() => {
     lastTriggerTimesRef.current = {};
-  };
+  }, []);
 
-  const stopAllPlayers = () => {
+  const stopAllPlayers = useCallback(() => {
     kitRef.current?.players?.stopAll?.();
     resetLastTriggerTimes();
-  };
+  }, [resetLastTriggerTimes]);
 
   const fillPartWithPattern = () => {
     const part = partRef.current;
@@ -243,7 +241,7 @@ export function useBeatMakerEngine() {
       Tone.Transport.stop();
       stopAllPlayers();
     };
-  }, [state.isPlaying, dispatch]);
+  }, [state.isPlaying, dispatch, stopAllPlayers]);
 
   useEffect(() => {
     if (state.isPlaying) {
@@ -290,7 +288,10 @@ export function useBeatMakerEngine() {
   // 4. UI 컴포넌트에서 사용할 액션 함수들을 정의합니다.
   const actions = useMemo(
     () => ({
-      setIsPlaying: (playing) => dispatch({ type: "SET_IS_PLAYING", payload: playing }),
+      setIsPlaying: (playing) => {
+        if (stateRef.current.isPlaying === playing) return;
+        dispatch({ type: "SET_IS_PLAYING", payload: playing });
+      },
       setBpm: (newBpm) => dispatch({ type: "SET_BPM", payload: newBpm }),
       setPattern: (newPattern) => dispatch({ type: "SET_PATTERN", payload: newPattern }),
       clearPattern: () => dispatch({ type: "SET_PATTERN", payload: clonePattern() }),
@@ -362,6 +363,15 @@ export function useBeatMakerEngine() {
 
         try {
           const totalDuration = Tone.Time("1m").toSeconds();
+          const shouldUsePathPlayback =
+            state.drawMode === "PATH" && state.path.length > 1 && pathPatternsRef.current.length > 0;
+
+          const getPatternForStep = (step) => {
+            if (!shouldUsePathPlayback) return state.pattern;
+            const pathPattern = pathPatternsRef.current[step % PATTERN_STEPS];
+            return pathPattern || state.pattern;
+          };
+
           const audioBuffer = await Tone.Offline(async ({ transport }) => {
             transport.bpm.value = state.bpm;
             const offlineKit = await createKit({ skipToneStart: true });
@@ -370,7 +380,8 @@ export function useBeatMakerEngine() {
 
             for (let step = 0; step < totalSteps; step++) {
               const eventTime = step * stepDuration;
-              Object.entries(state.pattern).forEach(([trackName, steps]) => {
+              const patternForStep = getPatternForStep(step);
+              Object.entries(patternForStep).forEach(([trackName, steps]) => {
                 if (steps[step % PATTERN_STEPS]) {
                   const playerKey = TRACK_TO_PLAYER_KEY_MAP[trackName];
                   if (playerKey) {
@@ -405,10 +416,14 @@ export function useBeatMakerEngine() {
       centerOf,
       dispatch,
       globalActions,
+      resetLastTriggerTimes,
       state.cornerEncodings,
       state.cornerPatterns,
+      state.drawMode,
       state.grid,
       state.isInterpolating,
+      state.path,
+      state.bpm,
       state.pattern,
       toCell,
     ]
