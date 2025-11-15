@@ -1,6 +1,9 @@
-flask
-flask-cors
-python-dotenv
-requests
+music21>=9.1.0
+midi2audio
+flask>=2.3.0
+flask-cors>=4.0.0
+python-dotenv>=1.0.0
+replicate>=0.15.0
+werkzeug>=2.3.0
 huggingface_hub
-replicate
+requests

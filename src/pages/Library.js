@@ -27,17 +27,23 @@ import {
   Favorite,
   MusicNote
 } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
 
 import { useMusicContext } from '../context/MusicContext';
 import { GENRE_OPTIONS } from '../components/common/GenreSelector';
 
 const Library = () => {
+  const navigate = useNavigate();
   const { state, actions } = useMusicContext();
   const [searchQuery, setSearchQuery] = React.useState('');
   const [sortBy, setSortBy] = React.useState('date');
   const [filterBy, setFilterBy] = React.useState('all');
 
   const { musicList, loading, error } = state.library;
+
+  console.log('=== Library 페이지 ===');
+  console.log('musicList:', musicList);
+  console.log('musicList 개수:', musicList?.length);
 
   // 장르 정보 가져오기
   const getGenreInfo = (genreId) => {
@@ -71,8 +77,9 @@ const Library = () => {
       }
       
       // 타입 필터
-      if (filterBy !== 'all' && music.type !== filterBy) {
-        return false;
+      if (filterBy !== 'all') {
+        if (filterBy === 'generated' && music.type !== 'generated') return false;
+        if (filterBy === 'converted' && !['converted', 'score-generated', 'score-audio'].includes(music.type)) return false;
       }
       
       return true;
@@ -84,9 +91,9 @@ const Library = () => {
         case 'title':
           return a.title.localeCompare(b.title);
         case 'duration':
-          return b.duration - a.duration;
+          return (b.duration || 0) - (a.duration || 0);
         case 'favorites':
-          return b.isFavorite - a.isFavorite;
+          return (b.isFavorite ? 1 : 0) - (a.isFavorite ? 1 : 0);
         default:
           return 0;
       }
@@ -94,44 +101,69 @@ const Library = () => {
 
   // 이벤트 핸들러들
   const handlePlay = (music) => {
-    actions.addNotification({
-      type: 'info',
-      message: `"${music.title}" 재생을 시작합니다.`
+    // Result 페이지로 이동하면서 해당 음악 데이터 전달
+    const isConversion = ['converted', 'score-generated', 'score-audio'].includes(music.type);
+    
+    actions.setResult?.({ 
+      convertedMusic: isConversion ? music : null,
+      generatedMusic: !isConversion ? music : null
     });
+    
+    navigate('/result');
   };
 
   const handleDownload = (music) => {
-    actions.addNotification({
-      type: 'success',
-      message: `"${music.title}" 다운로드가 시작되었습니다.`
-    });
+    try {
+      const a = document.createElement('a');
+      a.href = music.audioUrl;
+      const extension = music.audioUrl.endsWith('.wav') ? 'wav' : 'mp3';
+      a.download = `${music.title}.${extension}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      
+      actions.addNotification?.({
+        type: 'success',
+        message: `"${music.title}" 다운로드가 시작되었습니다.`
+      });
+    } catch (error) {
+      console.error('Download error:', error);
+      actions.addNotification?.({
+        type: 'error',
+        message: '다운로드에 실패했습니다.'
+      });
+    }
   };
 
   const handleDelete = (musicId) => {
-    actions.addNotification({
-      type: 'success',
-      message: '음악이 라이브러리에서 제거되었습니다.'
-    });
+    if (window.confirm('정말 삭제하시겠습니까?')) {
+      actions.removeFromLibrary?.(musicId);
+      actions.addNotification?.({
+        type: 'success',
+        message: '음악이 라이브러리에서 제거되었습니다.'
+      });
+    }
   };
 
   const handleToggleFavorite = (musicId) => {
-    actions.addNotification({
+    // TODO: Firebase에서 즐겨찾기 토글 기능 구현 필요
+    actions.addNotification?.({
       type: 'info',
-      message: '즐겨찾기 상태가 변경되었습니다.'
+      message: '즐겨찾기 기능은 곧 추가될 예정입니다.'
     });
   };
 
-  // 검은색 배경에 에메랄드 테마
+  // 색상 테마
   const colors = {
-    background: '#0A0A0A',         // 검은색 배경
-    cardBg: '#1A1A1A',            // 어두운 카드 배경
-    primary: '#50E3C2',           // 에메랄드 (Emerald)
-    secondary: '#40D9B8',         // 연한 에메랄드
-    accent: '#2DD4BF',            // 터콰이즈 (Teal)
-    text: '#FFFFFF',              // 흰색 텍스트
-    textLight: '#CCCCCC',         // 연한 회색 텍스트
-    border: '#333333',            // 어두운 테두리
-    shadow: 'rgba(80, 227, 194, 0.3)' // 에메랄드 그림자
+    background: '#0A0A0A',
+    cardBg: '#1A1A1A',
+    primary: '#50E3C2',
+    secondary: '#40D9B8',
+    accent: '#2DD4BF',
+    text: '#FFFFFF',
+    textLight: '#CCCCCC',
+    border: '#333333',
+    shadow: 'rgba(80, 227, 194, 0.3)'
   };
 
   return (
@@ -143,7 +175,6 @@ const Library = () => {
       <Container maxWidth="xl" sx={{ py: 6 }}>
         {/* 페이지 헤더 */}
         <Box sx={{ mb: 6, textAlign: 'center' }}>
-          
           <Typography 
             variant="h2" 
             component="h1"
@@ -219,10 +250,13 @@ const Library = () => {
             
             <Grid item xs={12} md={4}>
               <FormControl fullWidth>
-                <InputLabel sx={{ color: colors.textLight, '&.Mui-focused': { color: colors.primary } }}>정렬 기준</InputLabel>
+                <InputLabel sx={{ color: colors.textLight, '&.Mui-focused': { color: colors.primary } }}>
+                  정렬 기준
+                </InputLabel>
                 <Select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value)}
+                  label="정렬 기준"
                   MenuProps={{
                     PaperProps: {
                       sx: {
@@ -268,10 +302,13 @@ const Library = () => {
             
             <Grid item xs={12} md={4}>
               <FormControl fullWidth>
-                <InputLabel sx={{ color: colors.textLight, '&.Mui-focused': { color: colors.primary } }}>필터</InputLabel>
+                <InputLabel sx={{ color: colors.textLight, '&.Mui-focused': { color: colors.primary } }}>
+                  필터
+                </InputLabel>
                 <Select
                   value={filterBy}
                   onChange={(e) => setFilterBy(e.target.value)}
+                  label="필터"
                   MenuProps={{
                     PaperProps: {
                       sx: {
@@ -330,18 +367,29 @@ const Library = () => {
               데이터를 불러오지 못했어요
             </Typography>
             <Typography variant="body1" color={colors.textLight}>
-              잠시 후 다시 시도해주세요.
+              {error}
             </Typography>
           </Box>
         ) : filteredAndSortedMusic.length === 0 ? (
           <Box sx={{ textAlign: 'center', py: 8 }}>
             <MusicNote sx={{ fontSize: '4rem', color: colors.textLight, mb: 2 }} />
             <Typography variant="h5" color={colors.textLight} sx={{ mb: 1 }}>
-              저장된 곡이 아직 없어요
+              {searchQuery ? '검색 결과가 없어요' : '저장된 곡이 아직 없어요'}
             </Typography>
-            <Typography variant="body1" color={colors.textLight}>
-              음악을 생성하거나 비트를 만들어 저장해보세요!
+            <Typography variant="body1" color={colors.textLight} sx={{ mb: 3 }}>
+              {searchQuery ? '다른 검색어로 시도해보세요.' : '음악을 생성하거나 악보를 변환해서 저장해보세요!'}
             </Typography>
+            <Button
+              variant="contained"
+              onClick={() => navigate('/')}
+              sx={{
+                bgcolor: colors.accent,
+                color: colors.background,
+                '&:hover': { bgcolor: colors.primary }
+              }}
+            >
+              홈으로 가기
+            </Button>
           </Box>
         ) : (
           <Grid container spacing={3}>
@@ -368,21 +416,25 @@ const Library = () => {
                     {/* 타입 표시 */}
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
                       <Chip 
-                        label={music.type === 'generated' ? '생성됨' : '변환됨'}
+                        label={
+                          music.type === 'generated' ? '생성됨' : 
+                          music.type === 'score-generated' || music.type === 'score-audio' ? '악보 연주' : 
+                          '변환됨'
+                        }
                         size="small"
                         sx={{
-                          bgcolor: music.type === 'generated' ? '#1A1A1A' : '#1A1A1A',
-                          color: music.type === 'generated' ? '#FFD700' : '#DAA520',
+                          bgcolor: '#1A1A1A',
+                          color: music.type === 'generated' ? '#FFD700' : '#50E3C2',
                           fontWeight: 700,
                           fontSize: '0.75rem',
-                          border: `2px solid ${music.type === 'generated' ? '#FFD700' : '#DAA520'}`
+                          border: `2px solid ${music.type === 'generated' ? '#FFD700' : '#50E3C2'}`
                         }}
                       />
                       <IconButton
                         size="small"
                         onClick={() => handleToggleFavorite(music.id)}
                         sx={{ 
-                          color: music.isFavorite ? colors.warning : colors.textLight,
+                          color: music.isFavorite ? '#FFD700' : colors.textLight,
                           '&:hover': {
                             bgcolor: music.isFavorite ? '#FFF8E1' : colors.border
                           }
@@ -440,7 +492,7 @@ const Library = () => {
 
                     {/* 재생시간 */}
                     <Typography variant="body2" color={colors.textLight}>
-                      {formatTime(music.duration)}
+                      {formatTime(music.duration || 0)}
                     </Typography>
                   </CardContent>
 
@@ -451,7 +503,7 @@ const Library = () => {
                       sx={{
                         color: colors.primary,
                         '&:hover': {
-                          bgcolor: '#F3F4FF'
+                          bgcolor: 'rgba(80, 227, 194, 0.1)'
                         }
                       }}
                     >
@@ -463,7 +515,7 @@ const Library = () => {
                       sx={{
                         color: colors.accent,
                         '&:hover': {
-                          bgcolor: '#F0FDFC'
+                          bgcolor: 'rgba(45, 212, 191, 0.1)'
                         }
                       }}
                     >

@@ -10,6 +10,7 @@ import { subscribeToUserLibrary } from '../services/libraryApi';
 
 import { auth as firebaseAuth } from '../lib/firebase';
 
+import { removeMusicFromLibrary } from '../services/libraryApi';
 // 초기 상태 정의
 const initialState = {
   // 음악 생성 관련 상태
@@ -519,6 +520,36 @@ export function MusicContextProvider({ children }) {
     setLibraryError: useCallback((error) => {
       dispatch({ type: actionTypes.SET_LIBRARY_ERROR, payload: error });
     }, [dispatch]),
+
+    removeFromLibrary: useCallback(async (musicId) => {
+    const userId = state.auth.user?.uid;
+    
+    if (!userId) {
+      pushNotification({ type: 'error', message: '로그인이 필요합니다.' });
+      return;
+    }
+
+    try {
+      // 먼저 Context에서 제거 (즉시 UI 업데이트)
+      dispatch({ type: actionTypes.REMOVE_FROM_LIBRARY, payload: musicId });
+      
+      // Firebase에서도 제거
+      // musicType은 musicList에서 찾아서 결정
+      const musicItem = state.library.musicList.find(item => item.id === musicId);
+      const musicType = musicItem?.type === 'beat' ? 'beat' : 'track';
+      
+      await removeMusicFromLibrary(userId, musicId, musicType);
+      
+      pushNotification({ type: 'success', message: '라이브러리에서 제거되었습니다.' });
+    } catch (error) {
+      console.error('라이브러리 제거 실패:', error);
+      pushNotification({ type: 'error', message: '제거에 실패했습니다.' });
+      
+      // 실패 시 다시 추가 (롤백) - 필요하다면
+      // 실제로는 Firestore 실시간 업데이트가 다시 반영해줄 것임
+    }
+  }, [state.auth.user?.uid, state.library.musicList, pushNotification]),
+  
 
     // 인증 관련 액션들
     setAuthStatus: useCallback((status) => {

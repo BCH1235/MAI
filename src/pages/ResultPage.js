@@ -217,7 +217,7 @@ const ResultPage = () => {
 
             <Grid container spacing={4}>
               {/* 메인 컨텐츠 */}
-              <Grid xs={12} lg={9}>
+              <Grid item xs={12} lg={9}>
                 {/* 플레이어 카드 */}
                 <Paper elevation={0} sx={{ p: 4, border: `1px solid ${colors.border}`, borderRadius: 2, mb: 3, bgcolor: colors.cardBg, color: colors.text }}>
                   <Box sx={{ mb: 3 }}>
@@ -305,7 +305,7 @@ const ResultPage = () => {
                   </Typography>
 
                   <Grid container spacing={3}>
-                    <Grid xs={12} sm={6}>
+                    <Grid item xs={12} sm={6}>
                       <Typography variant="subtitle2" sx={{ mb: 1, color: colors.textLight }}>
                         {isConversion ? '변환된 장르' : '장르'}
                       </Typography>
@@ -330,7 +330,7 @@ const ResultPage = () => {
                     </Grid>
 
                     {isConversion && musicData.intensity && (
-                      <Grid xs={12} sm={6}>
+                      <Grid item xs={12} sm={6}>
                         <Typography variant="subtitle2" sx={{ mb: 1, color: colors.textLight }}>
                           변환 강도
                         </Typography>
@@ -341,7 +341,7 @@ const ResultPage = () => {
                     )}
 
                     {!isConversion && musicData.moods && musicData.moods.length > 0 && (
-                      <Grid xs={12} sm={6}>
+                      <Grid item xs={12} sm={6}>
                         <Typography variant="subtitle2" sx={{ mb: 1, color: colors.textLight }}>
                           분위기
                         </Typography>
@@ -366,7 +366,7 @@ const ResultPage = () => {
                       </Grid>
                     )}
 
-                    <Grid xs={12} sm={6}>
+                    <Grid item xs={12} sm={6}>
                       <Typography variant="subtitle2" sx={{ mb: 1, color: colors.textLight }}>
                         길이
                       </Typography>
@@ -375,7 +375,7 @@ const ResultPage = () => {
                       </Typography>
                     </Grid>
 
-                    <Grid xs={12} sm={6}>
+                    <Grid item xs={12} sm={6}>
                       <Typography variant="subtitle2" sx={{ mb: 1, color: colors.textLight }}>
                         생성 시간
                       </Typography>
@@ -388,7 +388,7 @@ const ResultPage = () => {
               </Grid>
 
               {/* 사이드바 */}
-              <Grid xs={12} lg={3}>
+              <Grid item xs={12} lg={3}>
                 <Box sx={{ position: 'sticky', top: 24 }}>
                   <Paper elevation={0} sx={{ p: 4, border: `1px solid ${colors.border}`, borderRadius: 2, bgcolor: colors.cardBg, minHeight: '600px', display: 'flex', flexDirection: 'column' }}>
                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1 }}>

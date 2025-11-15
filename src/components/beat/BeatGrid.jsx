@@ -39,19 +39,27 @@ export default function BeatGrid({
 }) {
   const cellH = cellHeight;
   const gapPx = Number.isFinite(gap) ? gap : 6;
-  const gridMinWidth = labelWidth + PATTERN_STEPS * (minCell + gapPx);
+  const compactLabelWidth = Math.max(36, labelWidth - 12);
+  const responsiveColumns = {
+    xs: `${compactLabelWidth}px repeat(${PATTERN_STEPS}, minmax(0, 1fr))`,
+    xl: `${labelWidth}px repeat(${PATTERN_STEPS}, minmax(${minCell}px, 1fr))`,
+  };
+  const responsiveGap = {
+    xs: `${Math.max(2, Math.floor(gapPx / 2))}px`,
+    md: `${gapPx}px`,
+  };
 
   return (
     <Box sx={{ width: fullWidth ? '100%' : 'auto', height: '100%', display: 'flex', flexDirection: 'column' }}>
       <Box
         sx={{
           display: 'grid',
-          minWidth: `${gridMinWidth}px`,
-          gridTemplateColumns: `${labelWidth}px repeat(${PATTERN_STEPS}, minmax(${minCell}px, 1fr))`,
-          gap: { xs: '4px', md: `${gap}px` },
+          width: '100%',
+          gridTemplateColumns: responsiveColumns,
+          gap: responsiveGap,
           alignItems: 'center',
           flex: 1,
-          overflowX: 'auto',
+          overflow: 'hidden',
           pb: 1,
         }}
       >
