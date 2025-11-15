@@ -8,9 +8,7 @@ import { BeatPadProvider } from '../state/beatPadStore';
 import { useBeatMakerEngine } from '../hooks/useBeatMakerEngine';
 import TransportBar from '../components/beat/TransportBar';
 import BeatGrid from '../components/beat/BeatGrid';
-import BlendPad from '../components/beat/BlendPad';
 import { clonePattern } from '../components/beat/presets';
-import PadToolbar from '../components/beat/PadToolbar';
 import PathOverlay from '../components/beat/PathOverlay';
 import BlendPadCanvas from '../components/beat/BlendPadCanvas';
 
@@ -68,7 +66,7 @@ function BeatMaker() {
 
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: colors.background, pt: 4, pb: 4 }}>
-      <Container maxWidth="xl">
+      <Container maxWidth="xl" sx={{ px: { xs: 2, md: 4 } }}>
         <Typography
           variant="h4"
           sx={{
@@ -83,7 +81,7 @@ function BeatMaker() {
           비트 만들기
         </Typography>
 
-        <Grid container spacing={3} sx={{ mb: 1 }}>
+        <Grid container spacing={2} sx={{ mb: 2 }}>
           <Grid item xs={12}>
             <Paper sx={{ p: 2, bgcolor: colors.cardBg, border: `1px solid ${colors.border}` }}>
               <TransportBar
@@ -98,14 +96,10 @@ function BeatMaker() {
           </Grid>
         </Grid>
 
-        <Stack
-          direction={{ xs: 'column', lg: 'row' }}
-          spacing={3}
-          alignItems={{ xs: 'stretch', lg: 'stretch' }}
-        >
+        <Stack direction={{ xs: 'column', lg: 'row' }} spacing={2.5} alignItems="stretch">
           <Paper
             sx={{
-              p: { xs: 2, md: 3 },
+              p: { xs: 1.5, md: 2 },
               bgcolor: colors.cardBg,
               border: `1px solid ${colors.border}`,
               display: 'flex',
@@ -116,76 +110,65 @@ function BeatMaker() {
               height: '100%',
             }}
           >
-              <Typography variant="h6" sx={{ color: colors.text, mb: 2 }}>
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              alignItems={{ xs: 'flex-start', sm: 'center' }}
+              justifyContent="space-between"
+              spacing={1.5}
+              sx={{ mb: 2 }}
+            >
+              <Typography variant="h6" sx={{ color: colors.text }}>
                 패드 블렌딩
               </Typography>
-
               {state.mode === "INTERPOLATE" ? (
-                <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
+                <Stack direction="row" spacing={1}>
                   <Button
                     onClick={() => actions.setDrawMode(state.drawMode === "PATH" ? "DRAG" : "PATH")}
                     variant={state.drawMode === "PATH" ? "contained" : "outlined"}
-                    sx={
-                      state.drawMode === "PATH"
-                        ? buttonStyles.contained
-                        : buttonStyles.outlined
-                    }
+                    sx={state.drawMode === "PATH" ? buttonStyles.contained : buttonStyles.outlined}
                   >
                     그리기 모드
                   </Button>
-                  <Button
-                    variant="contained"
-                    onClick={() => actions.setMode("EDIT")}
-                    sx={buttonStyles.contained}
-                  >
+                  <Button variant="contained" onClick={() => actions.setMode("EDIT")} sx={buttonStyles.contained}>
                     코너 편집하기
                   </Button>
                 </Stack>
               ) : (
-                <Box sx={{ mb: 2 }}>
-                  <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
-                    <Button
-                      variant="contained"
-                      onClick={actions.handleDoneEditing}
-                      disabled={state.isInterpolating}
-                      sx={buttonStyles.contained}
-                    >
-                      {state.isInterpolating ? "계산 중..." : "완료"}
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      onClick={() => actions.setMode("INTERPOLATE")}
-                      sx={buttonStyles.outlined}
-                    >
-                      취소
-                    </Button>
-                  </Stack>
-                  <Typography sx={{ color: colors.text, mb: 1 }}>
-                    편집할 코너 선택:
-                  </Typography>
-                  <ButtonGroup size="small">
-                    {["A", "B", "C", "D"].map((corner) => (
-                      <Button
-                        key={corner}
-                        variant={state.selectedCorner === corner ? "contained" : "outlined"}
-                        onClick={() => actions.selectCorner(corner)}
-                        sx={
-                          state.selectedCorner === corner
-                            ? buttonStyles.contained
-                            : buttonStyles.outlined
-                        }
-                      >
-                        코너 {corner}
-                      </Button>
-                    ))}
-                  </ButtonGroup>
-                </Box>
+                <Stack direction="row" spacing={1}>
+                  <Button
+                    variant="contained"
+                    onClick={actions.handleDoneEditing}
+                    disabled={state.isInterpolating}
+                    sx={buttonStyles.contained}
+                  >
+                    {state.isInterpolating ? "계산 중..." : "완료"}
+                  </Button>
+                  <Button variant="outlined" onClick={() => actions.setMode("INTERPOLATE")} sx={buttonStyles.outlined}>
+                    취소
+                  </Button>
+                </Stack>
               )}
+            </Stack>
+
+            {state.mode === "EDIT" && (
+              <ButtonGroup size="small" sx={{ mb: 2 }}>
+                {["A", "B", "C", "D"].map((corner) => (
+                  <Button
+                    key={corner}
+                    variant={state.selectedCorner === corner ? "contained" : "outlined"}
+                    onClick={() => actions.selectCorner(corner)}
+                    sx={state.selectedCorner === corner ? buttonStyles.contained : buttonStyles.outlined}
+                  >
+                    코너 {corner}
+                  </Button>
+                ))}
+              </ButtonGroup>
+            )}
               <Box
                 sx={{
                   position: 'relative',
                   flex: 1,
-                  minHeight: { xs: 320, md: 380 },
+                  minHeight: { xs: 360, md: 460 },
                   borderRadius: 2,
                   border: `1px solid ${colors.border}`,
                   backgroundImage:
@@ -205,37 +188,40 @@ function BeatMaker() {
               </Box>
             </Paper>
 
-          {/* 오른쪽: 드럼 시퀀서 */}
-          <Paper
-            sx={{
-              p: { xs: 2, md: 3 },
-              bgcolor: '#111111',
-              border: `1px solid ${colors.border}`,
-              flex: 1,
-              display: 'flex',
-              flexDirection: 'column',
-              minHeight: { lg: 560 },
-              height: '100%',
-            }}
-          >
-            <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" spacing={1} sx={{ mb: 2 }}>
-              <Typography variant="h6" sx={{ color: colors.text }}>
-                비트 패턴
-              </Typography>
-              <Typography sx={{ color: colors.textLight }}>BPM {state.bpm}</Typography>
-            </Stack>
-            <Box sx={{ flexGrow: 1 }}>
-              <BeatGrid
-                pattern={displayedPattern}
-                currentStep={state.currentStep}
-                onToggle={handleToggle}
-                cellHeight={34}
-              />
-            </Box>
-          </Paper>
-        </Stack>
-      </Container>
-    </Box>
+            {/* 오른쪽: 드럼 시퀀서 */}
+            <Paper
+              sx={{
+                p: { xs: 1.5, md: 2 },
+                bgcolor: '#111111',
+                border: `1px solid ${colors.border}`,
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                minHeight: { lg: 560 },
+                height: '100%',
+              }}
+            >
+              <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" spacing={1} sx={{ mb: 2 }}>
+                <Typography variant="h6" sx={{ color: colors.text }}>
+                  비트 패턴
+                </Typography>
+                <Typography sx={{ color: colors.textLight }}>BPM {state.bpm}</Typography>
+              </Stack>
+              <Box sx={{ flexGrow: 1 }}>
+                <BeatGrid
+                  pattern={displayedPattern}
+                  currentStep={state.currentStep}
+                  onToggle={handleToggle}
+                  cellHeight={42}
+                  minCell={42}
+                  labelWidth={48}
+                  gap={4}
+                />
+              </Box>
+            </Paper>
+          </Stack>
+       </Container>
+     </Box>
   );
 }
 

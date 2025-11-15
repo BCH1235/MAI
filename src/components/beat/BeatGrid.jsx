@@ -3,19 +3,20 @@ import React from 'react';
 import { Box } from '@mui/material';
 import { PATTERN_STEPS, TRACKS } from './presets';
 
+const TRACK_LABELS = {
+  kick: { short: 'K', full: 'Kick' },
+  snare: { short: 'S', full: 'Snare' },
+  hatClose: { short: 'HC', full: 'Hat (Closed)' },
+  hatOpen: { short: 'HO', full: 'Hat (Open)' },
+  tomLow: { short: 'TL', full: 'Tom (Low)' },
+  tomMid: { short: 'TM', full: 'Tom (Mid)' },
+  tomHigh: { short: 'TH', full: 'Tom (High)' },
+  crash: { short: 'C', full: 'Crash' },
+  ride: { short: 'R', full: 'Ride' },
+};
+
 function labelOf(key) {
-  switch (key) {
-    case 'kick': return 'Kick';
-    case 'snare': return 'Snare';
-    case 'hatC': return 'Hat (C)';
-    case 'hatO': return 'Hat (O)';
-    case 'tomL': return 'Tom (L)';
-    case 'tomM': return 'Tom (M)';
-    case 'tomH': return 'Tom (H)';
-    case 'crash': return 'Crash';
-    case 'ride': return 'Ride';
-    default: return key;
-  }
+  return TRACK_LABELS[key]?.short ?? key;
 }
 
 /**
@@ -67,7 +68,10 @@ export default function BeatGrid({
           const steps = Array.from({ length: PATTERN_STEPS }, (_, idx) => pattern[trackName]?.[idx] ?? false);
           return (
             <React.Fragment key={trackName}>
-              <Box sx={{ color: '#ddd', fontWeight: 600, display: 'flex', alignItems: 'center', height: cellH }}>
+              <Box
+                title={TRACK_LABELS[trackName]?.full ?? trackName}
+                sx={{ color: '#ddd', fontWeight: 600, display: 'flex', alignItems: 'center', height: cellH }}
+              >
                 {labelOf(trackName)}
               </Box>
 

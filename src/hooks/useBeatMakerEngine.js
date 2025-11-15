@@ -151,6 +151,24 @@ export function useBeatMakerEngine() {
     }
   }, [state.bpm]);
 
+  const lastTriggerTimesRef = useRef({});
+
+  const getSafeEventTime = (playerKey, scheduledTime) => {
+    const lastTime = lastTriggerTimesRef.current[playerKey] ?? -Infinity;
+    const nextTime = Math.max(scheduledTime ?? Tone.now(), lastTime + 1e-4);
+    lastTriggerTimesRef.current[playerKey] = nextTime;
+    return nextTime;
+  };
+
+  const resetLastTriggerTimes = () => {
+    lastTriggerTimesRef.current = {};
+  };
+
+  const stopAllPlayers = () => {
+    kitRef.current?.players?.stopAll?.();
+    resetLastTriggerTimes();
+  };
+
   const fillPartWithPattern = () => {
     const part = partRef.current;
     if (!part) return;
@@ -192,7 +210,8 @@ export function useBeatMakerEngine() {
             if (steps?.[note.step]) {
               const playerKey = TRACK_TO_PLAYER_KEY_MAP[trackName];
               if (playerKey) {
-                kitRef.current?.players.player(playerKey).start(time);
+                const safeTime = getSafeEventTime(playerKey, time);
+                kitRef.current?.players.player(playerKey).start(safeTime);
               }
             }
           });
@@ -210,16 +229,19 @@ export function useBeatMakerEngine() {
       }
 
       partRef.current.loopEnd = "1m";
+      stopAllPlayers();
       fillPartWithPattern();
       if (Tone.Transport.state !== "started") {
         Tone.Transport.start("+0.1");
       }
     } else {
       Tone.Transport.stop();
+      stopAllPlayers();
     }
 
     return () => {
       Tone.Transport.stop();
+      stopAllPlayers();
     };
   }, [state.isPlaying, dispatch]);
 
@@ -303,6 +325,15 @@ export function useBeatMakerEngine() {
       updateEditingPattern: (track, step) =>
         dispatch({ type: "UPDATE_EDITING_PATTERN", payload: { track, step } }),
       handleDoneEditing: async () => {
+        if (state.isInterpolating) return;
+        const wasPlaying = stateRef.current.isPlaying;
+        if (wasPlaying) {
+          dispatch({ type: "SET_IS_PLAYING", payload: false });
+          Tone.Transport.stop();
+          kitRef.current?.players?.stopAll?.();
+          resetLastTriggerTimes();
+        }
+
         dispatch({ type: "START_INTERPOLATION" });
         try {
           const encodings = await encodeCorners(state.cornerPatterns);
@@ -319,6 +350,10 @@ export function useBeatMakerEngine() {
         } catch (error) {
           console.error("Failed to interpolate:", error);
           dispatch({ type: "SET_MODE", payload: "INTERPOLATE" });
+        } finally {
+          if (wasPlaying && !stateRef.current.isPlaying) {
+            dispatch({ type: "SET_IS_PLAYING", payload: true });
+          }
         }
       },
       handleExport: async () => {
@@ -366,7 +401,17 @@ export function useBeatMakerEngine() {
         }
       },
     }),
-    [centerOf, dispatch, globalActions, state.cornerEncodings, state.cornerPatterns, state.grid, state.pattern, toCell]
+    [
+      centerOf,
+      dispatch,
+      globalActions,
+      state.cornerEncodings,
+      state.cornerPatterns,
+      state.grid,
+      state.isInterpolating,
+      state.pattern,
+      toCell,
+    ]
   );
 
   // 5. 훅의 최종 반환값

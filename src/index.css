@@ -5,6 +5,13 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background-color: #0A0A0A;
+  color: #ffffff;
+}
+
+#root {
+  min-height: 100vh;
+  background-color: #0A0A0A;
 }
 
 code {
