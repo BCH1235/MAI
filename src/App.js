@@ -18,19 +18,19 @@ import { MusicContextProvider } from './context/MusicContext';
 // ✅ MUI 테마 설정
 const theme = createTheme({
   palette: {
-    mode: 'dark',
-    primary: { main: '#50E3C2' },
-    secondary: { main: '#2DD4BF' },
+    mode: 'light',
+    primary: { main: '#6366F1' },
+    secondary: { main: '#8B5CF6' },
     success: { main: '#10B981' },
     warning: { main: '#F59E0B' },
     error: { main: '#EF4444' },
     background: {
-      default: '#050505',
-      paper: '#111111',
+      default: '#F8FAFC',
+      paper: '#FFFFFF',
     },
     text: {
-      primary: '#FFFFFF',
-      secondary: '#B3B3B3',
+      primary: '#1E293B',
+      secondary: '#64748B',
     },
   },
   typography: {
@@ -43,19 +43,6 @@ const theme = createTheme({
   },
   shape: { borderRadius: 8 },
   spacing: 8,
-  components: {
-    MuiCssBaseline: {
-      styleOverrides: {
-        body: {
-          backgroundColor: '#050505',
-          color: '#FFFFFF',
-        },
-        '#root': {
-          backgroundColor: '#050505',
-        },
-      },
-    },
-  },
 });
 
 function App() {

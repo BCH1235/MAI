@@ -3,6 +3,7 @@ import uuid
 import time
 import threading
 import subprocess
+import importlib
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, Optional, List
@@ -13,7 +14,14 @@ from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
 import replicate
 from music21 import converter
-from midi2audio import FluidSynth
+import requests
+
+midi2audio_spec = importlib.util.find_spec("midi2audio")
+if midi2audio_spec:
+    midi2audio_module = importlib.import_module("midi2audio")
+    FluidSynth = getattr(midi2audio_module, "FluidSynth", None)
+else:
+    FluidSynth = None
 
 # ───── env ──────────────────────────────────────────────────────────
 load_dotenv(dotenv_path=Path(__file__).parent / ".env", override=True)
@@ -204,6 +212,9 @@ def process_score():
     
     uploaded_file = request.files['score']
 
+    output_format = request.form.get('format', 'wav')
+    print(f"요청된 변환 형식: {output_format}")
+
     if uploaded_file.filename == '':
         return jsonify({'message': '파일이 선택되지 않았습니다.'}), 400
 
@@ -353,34 +364,44 @@ def process_score():
                         raise Exception(f"MIDI 변환 실패: {final_error}")
             
             # WAV 파일로 변환
-            wav_filename = f"{unique_filename}.wav"
-            wav_path = os.path.join(midi_folder, wav_filename)
-            
-            try:
-                print(f"WAV 파일 변환 중: {wav_path}")
-                fs = FluidSynth(sound_font=r'C:\soundfonts\FluidR3_GM.sf2')
-                fs.midi_to_audio(midi_path, wav_path)
-                print(f"WAV 파일 생성 완료: {wav_path}")
-                
-                audio_url = f"http://127.0.0.1:5000/api/audio/{wav_filename}"
-                audio_path = wav_path
-            except Exception as e:
-                print(f"FluidSynth 변환 실패: {e}")
-                import traceback
-                traceback.print_exc()
-                print("MIDI 파일을 그대로 사용합니다")
-                audio_url = f"http://127.0.0.1:5000/api/audio/{midi_filename}"
-                audio_path = midi_path
-            
-            # 곡 길이 계산
+            duration = 180 # 기본값
             try:
                 if score.metronomeMarkBoundaries():
                     tempo = score.metronomeMarkBoundaries()[0][-1].number
                     duration = int(score.duration.quarterLength / tempo * 60)
-                else:
-                    duration = 180
-            except:
+            except Exception as e:
+                print(f"곡 길이 계산 실패: {e}, 기본값(180) 사용")
                 duration = 180
+
+            if output_format == 'midi':
+                # MIDI 형식이 요청된 경우:
+                print("MIDI 형식이 요청됨. WAV 변환을 건너뜁니다.")
+                audio_url = f"http://127.0.0.1:5000/api/audio/{midi_filename}"
+                audio_path = midi_path
+            
+            else:
+                # WAV 형식이 요청된 경우 (기본값):
+                wav_filename = f"{unique_filename}.wav"
+                wav_path = os.path.join(midi_folder, wav_filename)
+                
+                try:
+                    print(f"WAV 파일 변환 중: {wav_path}")
+                    if FluidSynth is None:
+                        raise RuntimeError("FluidSynth 가 설치되어 있지 않습니다. midi2audio 패키지를 확인하세요.")
+                    fs = FluidSynth(sound_font=r'C:\soundfonts\FluidR3_GM.sf2')
+                    fs.midi_to_audio(midi_path, wav_path)
+                    print(f"WAV 파일 생성 완료: {wav_path}")
+                    
+                    audio_url = f"http://127.0.0.1:5000/api/audio/{wav_filename}"
+                    audio_path = wav_path
+                except Exception as e:
+                    #
+                    print(f"FluidSynth 변환 실패: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    print("MIDI 파일을 그대로 사용합니다")
+                    audio_url = f"http://127.0.0.1:5000/api/audio/{midi_filename}"
+                    audio_path = midi_path
 
             # 결과 데이터 생성
             result_data = {
@@ -392,7 +413,8 @@ def process_score():
                 "moods": [],
                 "duration": duration,
                 "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "type": "score-audio"
+                "type": "score-audio",
+                "format": output_format
             }
 
             print(f"오디오 파일 준비 완료: {result_data}")

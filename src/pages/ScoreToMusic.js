@@ -71,7 +71,6 @@ const ScoreToMusic = () => {
                     console.log('생성된 musicData:', musicData);
 
                     if (actions.setResult) actions.setResult({ convertedMusic: musicData });
-                    localStorage.setItem('scoreGeneratedMusic', JSON.stringify(musicData));
 
                     return true;
                 } else if (statusData.status === 'failed') {

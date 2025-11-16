@@ -37,11 +37,35 @@ const MusicGeneration = () => {
     isGenerating
   } = state.generation;
 
+  const [durationInput, setDurationInput] = useState(String(duration));
+  useEffect(() => {
+    setDurationInput(String(duration ?? ''));
+  }, [duration]);
+
   const isFormValid = selectedGenres.length > 0 || selectedMoods.length > 0;
 
   const handleGenreChange = (genres) => actions.setSelectedGenres(genres);
   const handleMoodChange = (moods) => actions.setSelectedMoods(moods);
   const handleDescriptionChange = (e) => actions.setDescription(e.target.value);
+  const handleDurationInputChange = (e) => {
+    const { value } = e.target;
+    if (!/^\d*$/.test(value)) return;
+    setDurationInput(value);
+    if (!value) return;
+    const numericValue = Number(value);
+    if (numericValue >= 10 && numericValue <= 30) {
+      actions.setDuration(numericValue);
+    }
+  };
+  const handleDurationBlur = () => {
+    let numericValue = parseInt(durationInput, 10);
+    if (Number.isNaN(numericValue)) {
+      numericValue = duration || 30;
+    }
+    numericValue = Math.min(30, Math.max(10, numericValue));
+    setDurationInput(String(numericValue));
+    actions.setDuration(numericValue);
+  };
 
   // ⬇️ 오디오 첨부 상태
   const [file, setFile] = useState(null);
@@ -234,7 +258,10 @@ const MusicGeneration = () => {
                 {/* 변경점 2: 레이블 및 입력 범위 수정 */}
                 <Typography variant="h6" sx={{ color: colors.text, fontWeight: 600, mb: 2 }}>길이 (10초 ~ 30초)</Typography>
                 <TextField
-                  type="number" value={duration} onChange={(e)=>actions.setDuration(Number(e.target.value || 0))}
+                  type="number"
+                  value={durationInput}
+                  onChange={handleDurationInputChange}
+                  onBlur={handleDurationBlur}
                   sx={{ width: 160, '& .MuiInputBase-root': { bgcolor: '#111', color: colors.text, borderRadius: 2 } }}
                   inputProps={{ min: 10, max: 30 }}
                 />

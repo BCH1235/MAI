@@ -96,7 +96,9 @@ export async function saveBeatItem({
   return docRef.id;
 }
 
-export default {
+const libraryWriter = {
   saveGeneratedTrack,
   saveBeatItem,
 };
+
+export default libraryWriter;

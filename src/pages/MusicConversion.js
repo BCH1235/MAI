@@ -66,7 +66,15 @@ function BeatMaker() {
 
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: colors.background, pt: 4, pb: 4 }}>
-      <Container maxWidth="xl" sx={{ px: { xs: 2, md: 4 } }}>
+      <Container
+        maxWidth="xl"
+        sx={{
+          px: { xs: 2, md: 3 },
+          width: '100%',
+          boxSizing: 'border-box',
+          overflowX: 'hidden',
+        }}
+      >
         <Typography
           variant="h4"
           sx={{
@@ -96,15 +104,21 @@ function BeatMaker() {
           </Grid>
         </Grid>
 
-        <Stack direction={{ xs: 'column', lg: 'row' }} spacing={2.5} alignItems="stretch">
+        <Stack
+          direction={{ xs: 'column', lg: 'row' }}
+          spacing={{ xs: 2, lg: 1 }}
+          alignItems="stretch"
+          sx={{ width: '100%' }}
+        >
           <Paper
             sx={{
-              p: { xs: 1.5, md: 2 },
+              p: { xs: 1.25, md: 1.75 },
               bgcolor: colors.cardBg,
               border: `1px solid ${colors.border}`,
               display: 'flex',
               flexDirection: 'column',
-              flex: { lg: '0 0 440px' },
+              flex: { lg: '0 0 360px' },
+              maxWidth: { lg: 360 },
               width: '100%',
               minHeight: { lg: 560 },
               height: '100%',
@@ -191,7 +205,7 @@ function BeatMaker() {
             {/* 오른쪽: 드럼 시퀀서 */}
             <Paper
               sx={{
-                p: { xs: 1.5, md: 2 },
+                p: { xs: 1.25, md: 1.75 },
                 bgcolor: '#111111',
                 border: `1px solid ${colors.border}`,
                 flex: 1,
@@ -207,16 +221,36 @@ function BeatMaker() {
                 </Typography>
                 <Typography sx={{ color: colors.textLight }}>BPM {state.bpm}</Typography>
               </Stack>
-              <Box sx={{ flexGrow: 1 }}>
-                <BeatGrid
-                  pattern={displayedPattern}
-                  currentStep={state.currentStep}
-                  onToggle={handleToggle}
-                  cellHeight={42}
-                  minCell={42}
-                  labelWidth={48}
-                  gap={4}
-                />
+              <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
+                <Box sx={{ flexGrow: 1 }}>
+                  <BeatGrid
+                    pattern={displayedPattern}
+                    currentStep={state.currentStep}
+                    onToggle={handleToggle}
+                    cellHeight={36}
+                    minCell={24}
+                    labelWidth={40}
+                    gap={2}
+                  />
+                </Box>
+                <Box
+                  sx={{
+                    mt: 1.5,
+                    pt: 1,
+                    borderTop: '1px solid #222',
+                  }}
+                >
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: colors.textLight,
+                      display: 'block',
+                      lineHeight: 1.7,
+                    }}
+                  >
+                    K-Kick 드럼 · S-Snare 스네어 · HC-닫힌 하이햇 · HO-열린 하이햇 · TL-로우 탐 · TM-미드 탐 · TH-하이 탐 · C-크래시 심벌 · R-라이드 심벌
+                  </Typography>
+                </Box>
               </Box>
             </Paper>
           </Stack>
