@@ -24,7 +24,7 @@ const colors = {
 };
 
 function BeatMaker() {
-  const { state, actions } = useBeatMakerEngine();
+  const { state, actions, isExporting } = useBeatMakerEngine();
 
   const handleToggle = (track, step) => {
     if (state.mode === 'EDIT') {
@@ -99,6 +99,8 @@ function BeatMaker() {
                 onStop={() => actions.setIsPlaying(false)}
                 onClear={actions.clearPattern}
                 onExport={actions.handleExport}
+                busy={isExporting}
+                busyMsg="비트를 저장 중입니다..."
               />
             </Paper>
           </Grid>

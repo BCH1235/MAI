@@ -38,10 +38,16 @@ import { useNavigate } from 'react-router-dom';
 import { useMusicContext } from '../context/MusicContext';
 import { GENRE_OPTIONS } from '../components/common/GenreSelector';
 import { updateLibraryItemTitle } from '../services/libraryApi';
+import UserNameWithAvatar from '../components/common/UserNameWithAvatar';
 
 const Library = () => {
   const navigate = useNavigate();
   const { state, actions } = useMusicContext();
+  const notifyMissingCreator = () =>
+    actions.addNotification?.({
+      type: 'info',
+      message: '게스트로 저장된 음악이라 크리에이터 프로필이 없어요.',
+    });
   const [searchQuery, setSearchQuery] = React.useState('');
   const [sortBy, setSortBy] = React.useState('date');
   const [filterBy, setFilterBy] = React.useState('all');
@@ -65,6 +71,7 @@ const Library = () => {
 
   // 시간 포맷팅
   const formatTime = (seconds) => {
+    if (!Number.isFinite(seconds)) return '0:00';
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
@@ -84,24 +91,15 @@ const Library = () => {
 
   const filteredAndSortedMusic = musicList
     .filter((music) => {
-      if (searchQuery && !music.title.toLowerCase().includes(searchQuery.toLowerCase())) {
+      const normalizedTitle = (music?.title || '').toLowerCase();
+      if (searchQuery && !normalizedTitle.includes(searchQuery.toLowerCase())) {
         return false;
       }
 
-      if (filterBy === 'generated' && music.type !== 'generated') {
-        return false;
-      }
-
-      if (
-        filterBy === 'converted' &&
-        !['converted', 'score-generated', 'score-audio'].includes(music.type)
-      ) {
-        return false;
-      }
-
-      if (filterBy === 'favorites' && !music.isFavorite) {
-        return false;
-      }
+      const itemType = music?.collectionType || (music?.type === 'beat' ? 'beat' : 'track');
+      if (filterBy === 'tracks' && itemType !== 'track') return false;
+      if (filterBy === 'beats' && itemType !== 'beat') return false;
+      if (filterBy === 'favorites' && !music.isFavorite) return false;
 
       return true;
     })
@@ -417,8 +415,8 @@ const Library = () => {
                   }}
                 >
                   <MenuItem value="all">전체</MenuItem>
-                  <MenuItem value="generated">생성된 음악</MenuItem>
-                  <MenuItem value="converted">변환된 음악</MenuItem>
+                  <MenuItem value="tracks">트랙</MenuItem>
+                  <MenuItem value="beats">비트</MenuItem>
                   <MenuItem value="favorites">즐겨찾기</MenuItem>
                 </Select>
               </FormControl>
@@ -466,9 +464,23 @@ const Library = () => {
           </Box>
         ) : (
           <Grid container spacing={3}>
-            {filteredAndSortedMusic.map((music) => (
-              <Grid item xs={12} sm={6} md={4} lg={3} key={music.id}>
-                <Card 
+            {filteredAndSortedMusic.map((music) => {
+              const collectionType = music.collectionType === 'beat' || music.type === 'beat' ? 'beat' : 'track';
+              const typeChipLabel = collectionType === 'beat' ? '비트' : '트랙';
+              const typeChipColor = collectionType === 'beat' ? colors.accent : '#FFD700';
+              const safeTitle = music.title || (collectionType === 'beat' ? '제목 없는 비트' : '제목 없는 음악');
+              const beatMeta = [];
+              if (collectionType === 'beat' && music.bpm) {
+                beatMeta.push(`${music.bpm} BPM`);
+              }
+              if (collectionType === 'beat' && Array.isArray(music.genres) && music.genres.length > 0) {
+                const labels = music.genres.slice(0, 2).map((genre) => getGenreInfo(genre).label);
+                beatMeta.push(labels.join(', '));
+              }
+
+              return (
+                <Grid item xs={12} sm={6} md={4} lg={3} key={music.id}>
+                  <Card 
                   elevation={0}
                   sx={{ 
                     height: '100%',
@@ -489,18 +501,14 @@ const Library = () => {
                     {/* 타입 표시 */}
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
                       <Chip 
-                        label={
-                          music.type === 'generated' ? '생성됨' : 
-                          music.type === 'score-generated' || music.type === 'score-audio' ? '악보 연주' : 
-                          '변환됨'
-                        }
+                        label={typeChipLabel}
                         size="small"
                         sx={{
                           bgcolor: '#1A1A1A',
-                          color: music.type === 'generated' ? '#FFD700' : '#50E3C2',
+                          color: typeChipColor,
                           fontWeight: 700,
                           fontSize: '0.75rem',
-                          border: `2px solid ${music.type === 'generated' ? '#FFD700' : '#50E3C2'}`
+                          border: `2px solid ${typeChipColor}`
                         }}
                       />
                     </Box>
@@ -518,8 +526,27 @@ const Library = () => {
                         whiteSpace: 'nowrap'
                       }}
                     >
-                      {music.title}
+                      {safeTitle}
                     </Typography>
+
+                    <Box sx={{ mb: 1 }}>
+                      <UserNameWithAvatar
+                        userId={music.ownerId}
+                        size={22}
+                        textColor={colors.textLight}
+                        fallbackName={music.ownerNickname || music.creatorNickname}
+                        onMissingOwner={notifyMissingCreator}
+                      />
+                    </Box>
+
+                    {collectionType === 'beat' && beatMeta.length > 0 && (
+                      <Typography
+                        variant="body2"
+                        sx={{ color: colors.textLight, mb: 1.5 }}
+                      >
+                        {beatMeta.join(' · ')}
+                      </Typography>
+                    )}
 
                     {/* 장르/분위기 태그 */}
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 2 }}>
@@ -553,7 +580,7 @@ const Library = () => {
 
                     {/* 재생시간 */}
                     <Typography variant="body2" color={colors.textLight}>
-                      {formatTime(music.duration || 0)}
+                      {formatTime(music.duration ?? 0)}
                     </Typography>
                   </CardContent>
 
@@ -622,7 +649,8 @@ const Library = () => {
                   </CardActions>
                 </Card>
               </Grid>
-            ))}
+              );
+            })}
           </Grid>
         )}
       </Container>

@@ -143,8 +143,7 @@ export default function TransportBar(props) {
             }
           }}
         >
-          {/* 변경점 2: '(WAV)' 텍스트 제거 */}
-          다운로드
+          라이브러리에 저장
         </Button>
       </Stack>
 

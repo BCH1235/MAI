@@ -12,6 +12,7 @@ import {
 import { Menu } from '@mui/icons-material';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useMusicContext } from '../../context/MusicContext';
+import UserAvatar from '../common/UserAvatar';
 
 const colors = {
   background: '#0A0A0A',
@@ -25,12 +26,23 @@ const colors = {
   shadow: 'rgba(80, 227, 194, 0.3)'
 };
 
+const deriveDisplayName = (user) => {
+  if (!user) return 'Guest';
+  if (user.nickname) return user.nickname;
+  if (user.displayName) return user.displayName;
+  if (user.email) return user.email.split('@')[0];
+  return 'Guest';
+};
+
 const Navbar = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { state, actions } = useMusicContext();
   const auth = state.auth;
   const isAuthed = Boolean(auth.user);
+  const profile = auth.profile;
+  const currentUserId = auth.user?.uid;
+  const currentDisplayName = deriveDisplayName(auth.user);
 
   const navItems = [
     { label: '홈', path: '/home' },
@@ -128,9 +140,35 @@ const Navbar = () => {
           <Box sx={{ display: { xs: 'none', md: 'flex' }, alignItems: 'center', gap: 2 }}>
             {isAuthed ? (
               <>
-                <Typography sx={{ color: colors.textLight, fontWeight: 500 }}>
-                  {auth.user.displayName || auth.user.email}
-                </Typography>
+                <Box
+                  onClick={() => currentUserId && handleNavigation(`/creator/${currentUserId}`)}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    cursor: 'pointer',
+                    px: 1.5,
+                    py: 0.5,
+                    borderRadius: 999,
+                    border: `1px solid ${colors.border}`,
+                    '&:hover': {
+                      borderColor: colors.accent,
+                      backgroundColor: 'rgba(80, 227, 194, 0.08)',
+                    },
+                  }}
+                >
+                  <UserAvatar
+                    userId={currentUserId}
+                    size={34}
+                    profile={profile || undefined}
+                    textColor="#0A0A0A"
+                    fallbackName={currentDisplayName}
+                    displayNameOverride={currentDisplayName}
+                  />
+                  <Typography sx={{ color: colors.textLight, fontWeight: 500 }}>
+                    {currentDisplayName}
+                  </Typography>
+                </Box>
                 <Button
                   onClick={handleSignOut}
                   sx={{
@@ -177,6 +215,35 @@ const Navbar = () => {
             </IconButton>
 
             {isAuthed ? (
+              <>
+                <Box
+                  onClick={() => currentUserId && handleNavigation(`/creator/${currentUserId}`)}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 0.75,
+                    cursor: 'pointer',
+                    borderRadius: 999,
+                    border: `1px solid ${colors.border}`,
+                    padding: '4px 10px',
+                    '&:hover': {
+                      borderColor: colors.accent,
+                      backgroundColor: 'rgba(80, 227, 194, 0.08)',
+                    },
+                  }}
+                  >
+                    <UserAvatar
+                      userId={currentUserId}
+                      size={28}
+                      profile={profile || undefined}
+                      textColor="#0A0A0A"
+                      fallbackName={currentDisplayName}
+                      displayNameOverride={currentDisplayName}
+                    />
+                    <Typography sx={{ color: colors.textLight, fontSize: 13 }}>
+                      {currentDisplayName}
+                    </Typography>
+                  </Box>
               <Button
                 onClick={handleSignOut}
                 size="small"
@@ -192,6 +259,7 @@ const Navbar = () => {
               >
                 로그아웃
               </Button>
+              </>
             ) : (
               <Button
                 onClick={() => handleNavigation('/auth')}

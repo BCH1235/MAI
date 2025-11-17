@@ -1,6 +1,6 @@
 // src/hooks/useBeatMakerEngine.js
 
-import { useEffect, useRef, useMemo, useCallback } from "react";
+import { useEffect, useRef, useMemo, useCallback, useState } from "react";
 import { useBeatPad } from "../state/beatPadStore";
 import * as Tone from "tone";
 import { createKit } from "../components/beat/SampleKit";
@@ -10,6 +10,7 @@ import { samplePathByDistance } from "./usePathMode";
 import { useCellGrid } from "./useCellGrid";
 import { audioBufferToWav } from "../utils/audioExport";
 import { useMusicContext } from "../context/MusicContext";
+import { saveBeatItem } from "../services/libraryWriter";
 
 const blendWeights = (x, y) => ({
   A: (1 - x) * (1 - y),
@@ -47,9 +48,18 @@ const TRACK_TO_PLAYER_KEY_MAP = {
   ride: "ride",
 };
 
+const deriveUserNickname = (user) => {
+  if (!user) return "Guest";
+  return (
+    user.nickname ||
+    user.displayName ||
+    (user.email ? user.email.split("@")[0] : "Guest")
+  );
+};
+
 export function useBeatMakerEngine() {
   const { state, dispatch } = useBeatPad();
-  const { actions: globalActions } = useMusicContext();
+  const { state: globalState, actions: globalActions } = useMusicContext();
   const { toCell, centerOf } = useCellGrid(state.grid.cols, state.grid.rows);
   const kitRef = useRef(null);
   const partRef = useRef(null);
@@ -60,6 +70,7 @@ export function useBeatMakerEngine() {
   const lastManualPatternRef = useRef(state.pattern);
   const wasPathPlayingRef = useRef(false);
   const blendRequestRef = useRef(0);
+  const [isExporting, setIsExporting] = useState(false);
 
   // --- VAE 모델 로딩 ---
   useEffect(() => {
@@ -358,11 +369,29 @@ export function useBeatMakerEngine() {
         }
       },
       handleExport: async () => {
-        if (!kitRef.current) return;
-        globalActions?.addNotification?.({ type: "info", message: "WAV 파일 렌더링 중..." });
+        if (!kitRef.current || isExporting) return;
+        const user = globalState?.auth?.user;
+        if (!user) {
+          globalActions?.addNotification?.({
+            type: "warning",
+            message: "로그인 후 저장할 수 있습니다.",
+          });
+          return;
+        }
+        const creatorNickname = deriveUserNickname(user);
 
         try {
-          const totalDuration = Tone.Time("1m").toSeconds();
+          setIsExporting(true);
+          globalActions?.addNotification?.({
+            type: "info",
+            message: "비트를 렌더링하고 라이브러리에 저장하고 있어요...",
+          });
+
+          const beatsTotal = PATTERN_STEPS / 4;
+          const safeBpm = Math.max(1, Number(state.bpm) || 60);
+          const durationSeconds = (60 / safeBpm) * beatsTotal;
+          const totalDuration = durationSeconds;
+          const stepDuration = durationSeconds / PATTERN_STEPS;
           const shouldUsePathPlayback =
             state.drawMode === "PATH" && state.path.length > 1 && pathPatternsRef.current.length > 0;
 
@@ -375,10 +404,8 @@ export function useBeatMakerEngine() {
           const audioBuffer = await Tone.Offline(async ({ transport }) => {
             transport.bpm.value = state.bpm;
             const offlineKit = await createKit({ skipToneStart: true });
-            const stepDuration = Tone.Time("16n").toSeconds();
-            const totalSteps = PATTERN_STEPS;
 
-            for (let step = 0; step < totalSteps; step++) {
+            for (let step = 0; step < PATTERN_STEPS; step++) {
               const eventTime = step * stepDuration;
               const patternForStep = getPatternForStep(step);
               Object.entries(patternForStep).forEach(([trackName, steps]) => {
@@ -405,10 +432,39 @@ export function useBeatMakerEngine() {
           anchor.download = `beat-${Date.now()}.wav`;
           anchor.click();
           URL.revokeObjectURL(url);
-          globalActions?.addNotification?.({ type: "success", message: "WAV 파일이 다운로드되었습니다." });
+
+          const presetTags = Array.from(new Set(Object.values(state.cornerPresets || {}).filter(Boolean)));
+          const bars = Math.max(1, Math.round(PATTERN_STEPS / 16));
+          await saveBeatItem({
+            ownerId: user.uid,
+            ownerNickname: creatorNickname,
+            creatorNickname,
+            title: `내 비트 ${new Date().toLocaleString()}`,
+            bpm: state.bpm,
+            duration: Number(durationSeconds.toFixed(2)),
+            bars,
+            pattern: state.pattern,
+            genres: presetTags,
+            moods: state.drawMode === "PATH" ? ["path"] : [],
+            description: `${state.bpm} BPM · ${shouldUsePathPlayback ? "패스 기반" : "그리드"} 비트`,
+            audioBlob: blob,
+            presetMeta: {
+              cornerPresets: state.cornerPresets,
+            },
+          });
+
+          globalActions?.addNotification?.({
+            type: "success",
+            message: "비트가 라이브러리에 저장되었어요!",
+          });
         } catch (error) {
           console.error("Export failed:", error);
-          globalActions?.addNotification?.({ type: "error", message: "파일 내보내기에 실패했습니다." });
+          globalActions?.addNotification?.({
+            type: "error",
+            message: "비트를 저장하지 못했습니다. 잠시 후 다시 시도해주세요.",
+          });
+        } finally {
+          setIsExporting(false);
         }
       },
     }),
@@ -416,9 +472,12 @@ export function useBeatMakerEngine() {
       centerOf,
       dispatch,
       globalActions,
+      globalState?.auth?.user?.uid,
+      isExporting,
       resetLastTriggerTimes,
       state.cornerEncodings,
       state.cornerPatterns,
+      state.cornerPresets,
       state.drawMode,
       state.grid,
       state.isInterpolating,
@@ -433,5 +492,6 @@ export function useBeatMakerEngine() {
   return {
     state,
     actions,
+    isExporting,
   };
 }

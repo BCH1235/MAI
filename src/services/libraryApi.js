@@ -126,6 +126,12 @@ export async function addMusicToLibrary(userId, musicData) {
     ...musicData,
     collectionType,
     ownerId: userId,
+    ownerNickname:
+      musicData.ownerNickname ||
+      musicData.creatorNickname ||
+      musicData.nickname ||
+      musicData.ownerName ||
+      null,
     createdAt: musicData.createdAt ? new Date(musicData.createdAt) : serverTimestamp(),
     updatedAt: serverTimestamp(),
   };

@@ -15,6 +15,7 @@ import ScoreToMusic from './pages/ScoreToMusic';
 import RequireAuth from './components/common/RequireAuth';
 import { MusicContextProvider } from './context/MusicContext';
 import HomeFeed from './pages/HomeFeed';
+import CreatorProfilePage from './pages/CreatorProfilePage';
 
 // ✅ MUI 테마 설정
 const theme = createTheme({
@@ -85,6 +86,8 @@ function App() {
 
                 {/* 로그인/회원가입 */}
                 <Route path="/auth" element={<AuthPage />} />
+
+                <Route path="/creator/:userId" element={<CreatorProfilePage />} />
 
                 {/* ✅ 예외 처리 (잘못된 주소 → 홈으로) */}
                 <Route path="*" element={<MusicGeneration />} />

@@ -20,6 +20,7 @@ import { useNavigate } from 'react-router-dom';
 import { useMusicContext } from '../context/MusicContext';
 import { subscribeToHomeFeed } from '../services/homeFeedApi';
 import { GENRE_OPTIONS } from '../components/common/GenreSelector';
+import UserNameWithAvatar from '../components/common/UserNameWithAvatar';
 
 const colors = {
   background: '#050505',
@@ -98,10 +99,10 @@ const HomeFeed = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [viewFilter, setViewFilter] = useState('all');
-  const [sortBy, setSortBy] = useState('latest');
   const [activeThemeId, setActiveThemeId] = useState(null);
   const [activeGenre, setActiveGenre] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [typeFilter, setTypeFilter] = useState('all');
   const pageSize = 5;
 
   const audioRef = useRef(null);
@@ -110,6 +111,13 @@ const HomeFeed = () => {
   const navigate = useNavigate();
   const { state, actions } = useMusicContext();
   const user = state?.auth?.user;
+  const notifyMissingCreator = () =>
+    actions.addNotification?.({
+      type: 'info',
+      message: '게스트로 저장된 음악이라 크리에이터 프로필이 없어요.',
+    });
+  const resolveCollectionType = (item) =>
+    item?.collectionType === 'beat' || item?.type === 'beat' ? 'beat' : 'track';
 
   useEffect(() => {
     audioRef.current = new Audio();
@@ -155,18 +163,6 @@ const HomeFeed = () => {
       .catch(() => setCurrentPlayingId(null));
   };
 
-  const handleViewFilterChange = (_, value) => {
-    if (value !== null) {
-      setViewFilter(value);
-      setCurrentPage(1);
-    }
-  };
-
-  const handleSortChange = (event) => {
-    setSortBy(event.target.value);
-    setCurrentPage(1);
-  };
-
   const handleThemeSelect = (themeId) => {
     setActiveThemeId((prev) => (prev === themeId ? null : themeId));
     setCurrentPage(1);
@@ -182,6 +178,12 @@ const HomeFeed = () => {
   };
 
   const handleClearGenre = () => setActiveGenre(null);
+
+  const handleTypeFilterChange = (value) => {
+    setTypeFilter(value);
+    setCurrentPage(1);
+    latestSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   const handleFavoriteToggle = (item) => {
     if (!user) {
@@ -231,13 +233,14 @@ const HomeFeed = () => {
         (item.genres || []).some((genre) => genre?.toLowerCase?.() === activeGenre.toLowerCase())
       );
     }
-    result.sort((a, b) => {
-      if (sortBy === 'duration') return (b.duration || 0) - (a.duration || 0);
-      if (sortBy === 'title') return (a.title || '').localeCompare(b.title || '');
-      return getCreatedAtValue(b) - getCreatedAtValue(a);
-    });
+    if (typeFilter === 'tracks') {
+      result = result.filter((item) => resolveCollectionType(item) === 'track');
+    } else if (typeFilter === 'beats') {
+      result = result.filter((item) => resolveCollectionType(item) === 'beat');
+    }
+    result.sort((a, b) => getCreatedAtValue(b) - getCreatedAtValue(a));
     return result;
-  }, [items, viewFilter, user, activeThemeId, activeGenre, sortBy]);
+  }, [items, viewFilter, user, activeThemeId, activeGenre, typeFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredAndSortedItems.length / pageSize));
   const startIndex = (currentPage - 1) * pageSize;
@@ -253,9 +256,11 @@ const HomeFeed = () => {
       const theme = THEME_PRESETS.find((t) => t.id === activeThemeId);
       if (theme) parts.push(`${theme.title} 테마`);
     }
+    if (typeFilter === 'tracks') parts.push('트랙만');
+    else if (typeFilter === 'beats') parts.push('비트만');
     if (activeGenre) parts.push(`${getGenreLabel(activeGenre)} 장르`);
     return `${parts.join(', ')} – ${count}곡`;
-  }, [filteredAndSortedItems.length, viewFilter, activeThemeId, activeGenre]);
+  }, [filteredAndSortedItems.length, viewFilter, activeThemeId, activeGenre, typeFilter]);
 
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: colors.background, pt: 6, pb: 10 }}>
@@ -270,8 +275,9 @@ const HomeFeed = () => {
               flexDirection: { xs: 'column', lg: 'row' },
               gap: { xs: 4, md: 6 },
               alignItems: 'center',
-              background: 'linear-gradient(135deg, rgba(80, 227, 194, 0.25), rgba(45, 52, 90, 0.9))',
+              background: 'linear-gradient(135deg, rgba(80, 227, 194, 0.3), rgba(33, 43, 90, 0.95))',
               border: `1px solid ${colors.border}`,
+              boxShadow: '0 25px 45px rgba(0,0,0,0.45)',
             }}
           >
             <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -315,6 +321,60 @@ const HomeFeed = () => {
                   최신 배경음악 듣기
                 </Button>
               </Stack>
+            </Box>
+            <Box
+              sx={{
+                flex: 1,
+                width: '100%',
+                display: { xs: 'none', lg: 'flex' },
+                justifyContent: 'center',
+                alignItems: 'center',
+              }}
+            >
+              <Box
+                sx={{
+                  position: 'relative',
+                  width: 280,
+                  height: 280,
+                  borderRadius: '50%',
+                  background: 'radial-gradient(circle at 30% 30%, rgba(80,227,194,0.35), rgba(15,23,42,0.6))',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  boxShadow: '0 30px 60px rgba(0,0,0,0.45)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: colors.text,
+                  textAlign: 'center',
+                  backdropFilter: 'blur(4px)',
+                }}
+              >
+                <Box
+                  sx={{
+                    width: 56,
+                    height: 56,
+                    borderRadius: '50%',
+                    backgroundColor: 'rgba(80,227,194,0.18)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: colors.accent,
+                    fontSize: 28,
+                    mb: 2,
+                  }}
+                >
+                  ♫
+                </Box>
+                <Typography sx={{ color: colors.textLight, fontSize: 14 }}>AI Generated</Typography>
+                <Typography sx={{ fontWeight: 700, fontSize: 20, mt: 0.5 }}>
+                  Ambient Beats
+                </Typography>
+                <Typography sx={{ color: colors.textLight, fontSize: 12, mt: 1 }}>
+                  실시간으로 업데이트되는
+                  <br />
+                  최신 트랙 & 비트
+                </Typography>
+              </Box>
             </Box>
           </Box>
         </Box>
@@ -455,6 +515,30 @@ const HomeFeed = () => {
                 방금 생성된 순서대로 짧은 배경음악을 모아둔 리스트입니다.
               </Typography>
               <Typography sx={{ color: colors.textLight, mt: 1 }}>{summaryText}</Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1.5 }}>
+                {[
+                  { value: 'all', label: '전체' },
+                  { value: 'tracks', label: '트랙만' },
+                  { value: 'beats', label: '비트만' },
+                ].map((option) => {
+                  const isActive = typeFilter === option.value;
+                  return (
+                    <Chip
+                      key={option.value}
+                      label={option.label}
+                      onClick={() => handleTypeFilterChange(option.value)}
+                      sx={{
+                        borderRadius: '999px',
+                        border: `1px solid ${isActive ? colors.accent : colors.border}`,
+                        bgcolor: isActive ? 'rgba(80, 227, 194, 0.18)' : '#0F1116',
+                        color: colors.text,
+                        fontSize: 12,
+                        px: 0.5,
+                      }}
+                    />
+                  );
+                })}
+              </Box>
             </Box>
 
             <Grid container spacing={3}>
@@ -517,6 +601,15 @@ const HomeFeed = () => {
                         >
                           {item.title || '제목 없는 배경음악'}
                         </Typography>
+                        <Box sx={{ mt: 0.5 }}>
+                          <UserNameWithAvatar
+                            userId={item.ownerId}
+                            size={20}
+                            textColor={colors.textLight}
+                            fallbackName={item.ownerNickname || item.creatorNickname}
+                            onMissingOwner={notifyMissingCreator}
+                          />
+                        </Box>
 
                         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 1.5 }}>
                           {(item.genres || []).slice(0, 2).map((genre) => (
@@ -534,6 +627,12 @@ const HomeFeed = () => {
                             />
                           ))}
                         </Box>
+
+                        {collectionType === 'beat' && item.bpm && (
+                          <Typography sx={{ color: colors.textLight, fontSize: 12, mb: 1 }}>
+                            {item.bpm} BPM{(item.genres || []).length ? ` · ${getGenreLabel(item.genres[0])} 비트` : ''}
+                          </Typography>
+                        )}
 
                         {item.description && (
                           <Typography

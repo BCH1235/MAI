@@ -28,6 +28,7 @@ async function loadBlobFromUrl(url) {
 
 export async function saveGeneratedTrack({
   ownerId,
+  ownerNickname = 'Guest',
   title,
   genres,
   moods,
@@ -35,9 +36,13 @@ export async function saveGeneratedTrack({
   durationSec,
   prompt,
   sourceUrl,
+  creatorNickname = 'Guest',
 }) {
   const payload = {
     ownerId,
+    ownerNickname,
+    creatorUid: ownerId || null,
+    creatorNickname,
     title,
     genres,
     moods,
@@ -66,21 +71,36 @@ export async function saveGeneratedTrack({
 
 export async function saveBeatItem({
   ownerId,
+  ownerNickname = 'Guest',
   title,
   bpm,
-  bars,
+  duration = 0,
+  bars = 1,
   pattern,
+  genres = [],
+  moods = [],
+  description = '',
   audioBlob,
   presetMeta,
+  creatorNickname = 'Guest',
 }) {
   const payload = {
     ownerId,
+    ownerNickname,
+    creatorUid: ownerId || null,
+    creatorNickname,
     title,
+    description,
+    genres,
+    moods,
     bpm,
+    duration,
     bars,
     pattern,
     presetMeta,
+    type: 'beat',
     source: 'beatmaker',
+    isFavorite: false,
     createdAt: serverTimestamp(),
   };
 

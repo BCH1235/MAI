@@ -13,6 +13,15 @@ import { useMusicContext } from '../context/MusicContext';
 import { generateAndWait } from '../services/musicApi';
 import { saveGeneratedTrack } from '../services/libraryWriter';
 
+const deriveUserNickname = (user) => {
+  if (!user) return 'Guest';
+  return (
+    user.nickname ||
+    user.displayName ||
+    (user.email ? user.email.split('@')[0] : 'Guest')
+  );
+};
+
 const MusicGeneration = () => {
   const navigate = useNavigate();
   const { state, actions } = useMusicContext();
@@ -154,9 +163,11 @@ const MusicGeneration = () => {
 
       const currentUser = state.auth.user;
       if (currentUser) {
+        const creatorNickname = deriveUserNickname(currentUser);
         try {
           const docId = await saveGeneratedTrack({
             ownerId: currentUser.uid,
+            ownerNickname: creatorNickname,
             title: generatedMusic.title,
             genres: selectedGenres,
             moods: selectedMoods,
@@ -164,6 +175,7 @@ const MusicGeneration = () => {
             durationSec: dur,
             prompt,
             sourceUrl: final.result.audioUrl,
+            creatorNickname,
           });
           generatedMusic = { ...generatedMusic, firestoreId: docId };
           actions.addNotification({ type: 'success', message: '음악이 생성되어 라이브러리에 저장되었습니다!' });

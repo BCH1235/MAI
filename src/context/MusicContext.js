@@ -14,6 +14,10 @@ import { removeMusicFromLibrary } from '../services/libraryApi';
 
 import { setFavoriteStatus } from '../services/libraryApi';
 import {
+  ensureUserProfileDocument,
+  subscribeToUserProfile,
+} from '../services/userProfileApi';
+import {
   loadScoreResultFromCache,
   persistScoreResultToCache,
   clearScoreResultCache
@@ -51,8 +55,10 @@ const initialState = {
   // 인증 상태
   auth: {
     user: null,
+    firebaseUser: null,
     status: 'idle', // idle | loading | authenticated | unauthenticated | error
     error: null,
+    profile: null,
   },
   
   // 라이브러리 관련 상태
@@ -134,6 +140,41 @@ const actionTypes = {
   AUTH_SET_STATUS: 'AUTH_SET_STATUS',
   AUTH_STATE_CHANGE: 'AUTH_STATE_CHANGE',
   AUTH_SET_ERROR: 'AUTH_SET_ERROR',
+  AUTH_SET_PROFILE: 'AUTH_SET_PROFILE',
+};
+
+const getEmailLocalPart = (email) => {
+  if (!email) return null;
+  const [local] = email.split('@');
+  return local || null;
+};
+
+const mergeAuthUserWithProfile = (authUser, profile) => {
+  if (!authUser && !profile) return null;
+  const base = authUser || {};
+  const profileData = profile || {};
+  const nickname =
+    profileData.nickname ||
+    base.nickname ||
+    profileData.displayName ||
+    base.displayName ||
+    getEmailLocalPart(profileData.email) ||
+    getEmailLocalPart(base.email) ||
+    'Guest';
+  const displayName =
+    profileData.displayName ||
+    base.displayName ||
+    profileData.nickname ||
+    nickname;
+  return {
+    ...base,
+    ...profileData,
+    uid: profileData.uid || base.uid || profileData.id || null,
+    nickname,
+    displayName,
+    email: profileData.email || base.email || null,
+    photoURL: profileData.photoURL ?? base.photoURL ?? null,
+  };
 };
 
 // 리듀서 함수
@@ -419,16 +460,21 @@ function musicReducer(state, action) {
         },
       };
 
-    case actionTypes.AUTH_STATE_CHANGE:
+    case actionTypes.AUTH_STATE_CHANGE: {
+      const nextProfile = action.payload ? state.auth.profile : null;
+      const mergedUser = mergeAuthUserWithProfile(action.payload, nextProfile);
       return {
         ...state,
         auth: {
           ...state.auth,
-          user: action.payload,
+          firebaseUser: action.payload,
+          user: mergedUser,
           status: action.payload ? 'authenticated' : 'unauthenticated',
           error: null,
+          profile: nextProfile,
         },
       };
+    }
 
     case actionTypes.AUTH_SET_ERROR:
       return {
@@ -438,6 +484,18 @@ function musicReducer(state, action) {
           error: action.payload,
         },
       };
+
+    case actionTypes.AUTH_SET_PROFILE: {
+      const mergedUser = mergeAuthUserWithProfile(state.auth.firebaseUser, action.payload);
+      return {
+        ...state,
+        auth: {
+          ...state.auth,
+          profile: action.payload,
+          user: mergedUser,
+        },
+      };
+    }
 
     default:
       return state;
@@ -558,33 +616,36 @@ export function MusicContextProvider({ children }) {
     }, [dispatch]),
 
     removeFromLibrary: useCallback(async (musicId) => {
-    const userId = state.auth.user?.uid;
-    
-    if (!userId) {
-      pushNotification({ type: 'error', message: '로그인이 필요합니다.' });
-      return;
-    }
+      const userId = state.auth.user?.uid;
+      
+      if (!userId) {
+        pushNotification({ type: 'error', message: '로그인이 필요합니다.' });
+        return;
+      }
 
-    try {
-      // 먼저 Context에서 제거 (즉시 UI 업데이트)
-      dispatch({ type: actionTypes.REMOVE_FROM_LIBRARY, payload: musicId });
-      
-      // Firebase에서도 제거
-      // musicType은 musicList에서 찾아서 결정
-      const musicItem = state.library.musicList.find(item => item.id === musicId);
-      const musicType = musicItem?.type === 'beat' ? 'beat' : 'track';
-      
-      await removeMusicFromLibrary(userId, musicId, musicType);
-      
-      pushNotification({ type: 'success', message: '라이브러리에서 제거되었습니다.' });
-    } catch (error) {
-      console.error('라이브러리 제거 실패:', error);
-      pushNotification({ type: 'error', message: '제거에 실패했습니다.' });
-      
-      // 실패 시 다시 추가 (롤백) - 필요하다면
-      // 실제로는 Firestore 실시간 업데이트가 다시 반영해줄 것임
-    }
-  }, [state.auth.user?.uid, state.library.musicList, pushNotification]),
+      try {
+        // 먼저 Context에서 제거 (즉시 UI 업데이트)
+        dispatch({ type: actionTypes.REMOVE_FROM_LIBRARY, payload: musicId });
+        
+        // Firebase에서도 제거
+        // musicType은 musicList에서 찾아서 결정
+        const musicItem = state.library.musicList.find(item => item.id === musicId);
+        const musicType =
+          musicItem?.collectionType === 'beat' || musicItem?.type === 'beat'
+            ? 'beat'
+            : 'track';
+        
+        await removeMusicFromLibrary(userId, musicId, musicType);
+        
+        pushNotification({ type: 'success', message: '라이브러리에서 제거되었습니다.' });
+      } catch (error) {
+        console.error('라이브러리 제거 실패:', error);
+        pushNotification({ type: 'error', message: '제거에 실패했습니다.' });
+        
+        // 실패 시 다시 추가 (롤백) - 필요하다면
+        // 실제로는 Firestore 실시간 업데이트가 다시 반영해줄 것임
+      }
+    }, [state.auth.user?.uid, state.library.musicList, pushNotification]),
 
     toggleFavorite: useCallback(async (musicId, musicType, currentFavoriteStatus) => {
       const userId = state.auth.user?.uid;
@@ -705,6 +766,9 @@ export function MusicContextProvider({ children }) {
       firebaseAuth,
       (firebaseUser) => {
         if (firebaseUser) {
+          ensureUserProfileDocument(firebaseUser).catch((error) =>
+            console.warn('[MusicContext] failed to ensure user profile', error)
+          );
           const { uid, displayName, email, photoURL } = firebaseUser;
           dispatch({
             type: actionTypes.AUTH_STATE_CHANGE,
@@ -725,6 +789,23 @@ export function MusicContextProvider({ children }) {
 
     return () => unsubscribe();
   }, [dispatch]);
+
+  useEffect(() => {
+    const userId = state.auth.firebaseUser?.uid;
+    if (!userId) {
+      dispatch({ type: actionTypes.AUTH_SET_PROFILE, payload: null });
+      return undefined;
+    }
+    const unsubscribe = subscribeToUserProfile(userId, {
+      onUpdate: (profile) => {
+        dispatch({ type: actionTypes.AUTH_SET_PROFILE, payload: profile });
+      },
+      onError: (error) => {
+        console.warn('[MusicContext] profile subscription error', error);
+      },
+    });
+    return () => unsubscribe?.();
+  }, [state.auth.firebaseUser?.uid, dispatch]);
 
   useEffect(() => {
     let unsubscribeLibrary = null;
