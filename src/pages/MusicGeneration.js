@@ -139,7 +139,7 @@ const MusicGeneration = () => {
         file // ✅ 첨부 파일 전달
       );
 
-      const generatedMusic = {
+      let generatedMusic = {
         id: Date.now(),
         title: `AI_Generated_${Date.now()}`,
         genres: selectedGenres,
@@ -148,15 +148,14 @@ const MusicGeneration = () => {
         duration: dur,
         audioUrl: final.result.audioUrl,
         collectionType: 'track',
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        firestoreId: null,
       };
-
-      actions.completeGeneration(generatedMusic);
 
       const currentUser = state.auth.user;
       if (currentUser) {
         try {
-          await saveGeneratedTrack({
+          const docId = await saveGeneratedTrack({
             ownerId: currentUser.uid,
             title: generatedMusic.title,
             genres: selectedGenres,
@@ -166,6 +165,7 @@ const MusicGeneration = () => {
             prompt,
             sourceUrl: final.result.audioUrl,
           });
+          generatedMusic = { ...generatedMusic, firestoreId: docId };
           actions.addNotification({ type: 'success', message: '음악이 생성되어 라이브러리에 저장되었습니다!' });
         } catch (writeError) {
           console.warn(writeError);
@@ -174,6 +174,8 @@ const MusicGeneration = () => {
       } else {
         actions.addNotification({ type: 'success', message: '음악이 성공적으로 생성되었습니다! 로그인하면 라이브러리에 저장돼요.' });
       }
+
+      actions.completeGeneration(generatedMusic);
       navigate('/result');
     } catch (error) {
       console.error(error);

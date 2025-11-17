@@ -14,7 +14,7 @@ import { useMusicContext } from '../context/MusicContext';
 import { GENRE_OPTIONS } from '../components/common/GenreSelector';
 import { MOOD_OPTIONS } from '../components/common/MoodSelector';
 import AudioWaveform from '../components/common/AudioWaveform';
-import { addMusicToLibrary } from '../services/libraryApi';
+import { addMusicToLibrary, updateLibraryMusic } from '../services/libraryApi';
 import { 
   uploadMusicToStorage, 
   isFirebaseStorageUrl, 
@@ -319,8 +319,6 @@ const ResultPage = () => {
   };
 
   const handleSaveToLibrary = async () => {
-    //const user = state.auth.user;
-    
     if (!user) {
       actions.addNotification?.({ type: 'error', message: '로그인이 필요합니다.' });
       return;
@@ -331,37 +329,59 @@ const ResultPage = () => {
     }
 
     setIsSaving(true);
-    
-    try {
-      // 1. 저장 전, 공용 URL을 먼저 확보
-      const finalAudioUrl = await getPublicUrl();
 
-      // 2. musicData의 audioUrl을 공용 URL로 교체하여 새 객체 생성
+    try {
+      const finalAudioUrl = await getPublicUrl();
       const finalTitle = resolvedTitle || musicData.title || '제목 없는 배경음악';
+      const collectionType = musicData.collectionType === 'beat' || musicData.type === 'beat' ? 'beat' : 'track';
+      const entryType = musicData.type || (isConversion ? 'converted' : 'generated');
+
       const dataToSave = {
         ...musicData,
         title: finalTitle,
         audioUrl: finalAudioUrl,
-        // (만약 Replicate URL이었다면) 원본 임시 URL도 백업
-        sourceUrl: (musicData.audioUrl !== finalAudioUrl) ? musicData.audioUrl : null,
-        collectionType: musicData.collectionType || 'track',
+        sourceUrl: musicData.audioUrl !== finalAudioUrl ? musicData.audioUrl : musicData.sourceUrl || null,
+        collectionType,
+        type: entryType,
       };
 
-      // 3. Firebase에 *수정된 데이터(dataToSave)*를 저장
-      // [기존: addMusicToLibrary(user.uid, musicData)]
-      const docId = await addMusicToLibrary(user.uid, dataToSave);
-      
-      // 4. Context에도 *수정된 데이터(dataToSave)*를 추가
-      // (ID가 없을 경우를 대비해 docId도 포함)
-      // [기존: actions.addToLibrary?.(musicData)]
-      actions.addToLibrary?.({ ...dataToSave, id: musicData.id || docId });
-      
-      actions.addNotification?.({ type: 'success', message: '라이브러리에 추가되었습니다.' });
-      
-      console.log('라이브러리 저장 성공 (공용 URL):', dataToSave);
+      const sanitized = { ...dataToSave };
+      delete sanitized.id;
+      delete sanitized.firestoreId;
+
+      const existingDocId = musicData.firestoreId;
+      let docId = existingDocId;
+
+      if (existingDocId) {
+        await updateLibraryMusic({
+          userId: user.uid,
+          musicId: existingDocId,
+          musicType: collectionType,
+          data: sanitized,
+        });
+        actions.addNotification?.({ type: 'success', message: '라이브러리 정보를 업데이트했어요.' });
+      } else {
+        docId = await addMusicToLibrary(user.uid, sanitized);
+        actions.addToLibrary?.({ ...dataToSave, id: musicData.id || docId, firestoreId: docId });
+        actions.addNotification?.({ type: 'success', message: '라이브러리에 추가되었습니다.' });
+      }
+
+      const nextMusicData = {
+        ...musicData,
+        ...dataToSave,
+        firestoreId: docId,
+        id: docId || musicData.id,
+      };
+
+      if (isConversion) {
+        actions.setResult?.({ convertedMusic: nextMusicData });
+      } else {
+        actions.setResult?.({ generatedMusic: nextMusicData });
+      }
+
+      console.log('라이브러리 저장 성공 (공용 URL):', nextMusicData);
     } catch (error) {
       console.error('라이브러리 저장 실패:', error);
-      
       if (error.message?.includes('already exists')) {
         actions.addNotification?.({ type: 'info', message: '이미 라이브러리에 있는 음악입니다.' });
       } else {
@@ -385,10 +405,31 @@ const ResultPage = () => {
       <Container maxWidth="lg" sx={{ py: 6 }}>
         {!hasMusic ? (
           <Box sx={{ textAlign: 'center' }}>
-            <Alert severity="warning" sx={{ mb: 3 }}>
+            <Alert
+              severity="info"
+              sx={{
+                mb: 3,
+                border: `1px solid ${colors.accent}`,
+                bgcolor: 'rgba(45, 212, 191, 0.08)',
+                color: colors.accent,
+                fontWeight: 600,
+              }}
+            >
               표시할 음악 데이터가 없습니다.
             </Alert>
-            <Button variant="contained" onClick={() => navigate('/')} startIcon={<Home />}>
+            <Button
+              variant="contained"
+              onClick={() => navigate('/')}
+              startIcon={<Home />}
+              sx={{
+                bgcolor: colors.accent,
+                color: colors.background,
+                fontWeight: 700,
+                px: 4,
+                py: 1.5,
+                '&:hover': { bgcolor: colors.primary, color: '#041311' },
+              }}
+            >
               홈으로 돌아가기
             </Button>
           </Box>

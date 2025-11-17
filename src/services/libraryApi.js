@@ -228,6 +228,31 @@ export async function updateLibraryItemTitle({ userId, musicId, musicType, title
   });
 }
 
+export async function updateLibraryMusic({
+  userId,
+  musicId,
+  musicType = 'track',
+  data = {},
+}) {
+  if (!userId || !musicId) {
+    throw new Error('User ID and Music ID are required');
+  }
+  const collectionName = musicType === 'beat' ? COLLECTION_BEATS : COLLECTION_TRACKS;
+  const docRef = doc(db, collectionName, musicId);
+  const docSnap = await getDoc(docRef);
+  if (!docSnap.exists()) {
+    throw new Error('Music not found');
+  }
+  const docData = docSnap.data();
+  if (docData.ownerId !== userId) {
+    throw new Error('You do not have permission to modify this music');
+  }
+  await updateDoc(docRef, {
+    ...data,
+    updatedAt: serverTimestamp(),
+  });
+}
+
 export function getTrackDocRef(trackId) {
   return doc(db, COLLECTION_TRACKS, trackId);
 }
@@ -242,6 +267,7 @@ const libraryApi = {
   removeMusicFromLibrary,
   setFavoriteStatus,
   updateLibraryItemTitle,
+  updateLibraryMusic,
   getTrackDocRef,
   getBeatDocRef,
 };
