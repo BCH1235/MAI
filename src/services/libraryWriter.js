@@ -44,6 +44,7 @@ export async function saveGeneratedTrack({
     description,
     duration: durationSec,
     prompt,
+    type: 'generated',
     source: 'musicgen',
     createdAt: serverTimestamp(),
   };

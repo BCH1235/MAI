@@ -147,6 +147,7 @@ const MusicGeneration = () => {
         description: prompt,
         duration: dur,
         audioUrl: final.result.audioUrl,
+        collectionType: 'track',
         createdAt: new Date().toISOString()
       };
 

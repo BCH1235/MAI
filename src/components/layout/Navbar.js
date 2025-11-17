@@ -10,7 +10,7 @@ import {
   IconButton
 } from '@mui/material';
 import { Menu } from '@mui/icons-material';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useMusicContext } from '../../context/MusicContext';
 
 const colors = {
@@ -27,12 +27,31 @@ const colors = {
 
 const Navbar = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { state, actions } = useMusicContext();
   const auth = state.auth;
   const isAuthed = Boolean(auth.user);
 
+  const navItems = [
+    { label: '홈', path: '/home' },
+    { label: '음악 생성', path: '/generate', fallback: '/' },
+    { label: '비트 만들기', path: '/convert' },
+    { label: '악보 연주', path: '/score-to-midi' },
+    { label: '라이브러리', path: '/library' },
+  ];
+
   const handleNavigation = (path) => {
     navigate(path);
+  };
+
+  const checkIsActive = (path, fallback) => {
+    if (!path) return false;
+    if (path === '/home') {
+      return location.pathname === path;
+    }
+    if (location.pathname === path) return true;
+    if (fallback && location.pathname === fallback) return true;
+    return location.pathname.startsWith(path);
   };
 
   const handleSignOut = async () => {
@@ -80,65 +99,29 @@ const Navbar = () => {
 
           {/* 데스크탑 메뉴 */}
           <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: 1 }}>
-            <Button
-              onClick={() => handleNavigation('/generate')}
-              sx={{
-                color: colors.text,
-                fontWeight: 500,
-                textTransform: 'none',
-                px: 3,
-                py: 1,
-                borderRadius: 2,
-                '&:hover': { bgcolor: colors.background, color: colors.accent }
-              }}
-            >
-              음악 생성
-            </Button>
-
-            <Button
-              onClick={() => handleNavigation('/convert')}
-              sx={{
-                color: colors.text,
-                fontWeight: 500,
-                textTransform: 'none',
-                px: 3,
-                py: 1,
-                borderRadius: 2,
-                '&:hover': { bgcolor: colors.background, color: colors.accent }
-              }}
-            >
-              비트 만들기
-            </Button>
-
-            <Button
-              onClick={() => handleNavigation('/score-to-midi')}
-              sx={{
-                color: colors.text,
-                fontWeight: 500,
-                textTransform: 'none',
-                px: 3,
-                py: 1,
-                borderRadius: 2,
-                '&:hover': { bgcolor: colors.background, color: colors.accent }
-              }}
-            >
-              악보 연주
-            </Button>
-
-            <Button
-              onClick={() => handleNavigation('/library')}
-              sx={{
-                color: colors.text,
-                fontWeight: 500,
-                textTransform: 'none',
-                px: 3,
-                py: 1,
-                borderRadius: 2,
-                '&:hover': { bgcolor: colors.background, color: colors.accent }
-              }}
-            >
-              라이브러리
-            </Button>
+            {navItems.map((item) => {
+              const isActive = checkIsActive(item.path, item.fallback);
+              return (
+                <Button
+                  key={item.path}
+                  onClick={() => handleNavigation(item.path)}
+                  sx={{
+                    color: isActive ? colors.primary : colors.text,
+                    fontWeight: isActive ? 700 : 500,
+                    textTransform: 'none',
+                    px: 3,
+                    py: 1,
+                    borderRadius: 2,
+                    borderBottom: isActive ? `2px solid ${colors.primary}` : '2px solid transparent',
+                    bgcolor: isActive ? 'rgba(80, 227, 194, 0.08)' : 'transparent',
+                    transition: 'all 0.2s ease',
+                    '&:hover': { bgcolor: colors.background, color: colors.accent }
+                  }}
+                >
+                  {item.label}
+                </Button>
+              );
+            })}
           </Box>
 
           {/* 사용자 인증 버튼 */}

@@ -18,19 +18,26 @@ import {
   FormControl,
   InputLabel,
   CircularProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 import { 
   Search,
   PlayArrow,
   Download,
   Delete,
-  Favorite,
+  Star,
+  StarBorder,
+  Edit,
   MusicNote
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 
 import { useMusicContext } from '../context/MusicContext';
 import { GENRE_OPTIONS } from '../components/common/GenreSelector';
+import { updateLibraryItemTitle } from '../services/libraryApi';
 
 const Library = () => {
   const navigate = useNavigate();
@@ -38,6 +45,12 @@ const Library = () => {
   const [searchQuery, setSearchQuery] = React.useState('');
   const [sortBy, setSortBy] = React.useState('date');
   const [filterBy, setFilterBy] = React.useState('all');
+  const [renameDialog, setRenameDialog] = React.useState({
+    open: false,
+    music: null,
+    value: '',
+    saving: false,
+  });
 
   const { musicList, loading, error } = state.library;
 
@@ -71,17 +84,25 @@ const Library = () => {
 
   const filteredAndSortedMusic = musicList
     .filter((music) => {
-      // 검색 필터
       if (searchQuery && !music.title.toLowerCase().includes(searchQuery.toLowerCase())) {
         return false;
       }
-      
-      // 타입 필터
-      if (filterBy !== 'all') {
-        if (filterBy === 'generated' && music.type !== 'generated') return false;
-        if (filterBy === 'converted' && !['converted', 'score-generated', 'score-audio'].includes(music.type)) return false;
+
+      if (filterBy === 'generated' && music.type !== 'generated') {
+        return false;
       }
-      
+
+      if (
+        filterBy === 'converted' &&
+        !['converted', 'score-generated', 'score-audio'].includes(music.type)
+      ) {
+        return false;
+      }
+
+      if (filterBy === 'favorites' && !music.isFavorite) {
+        return false;
+      }
+
       return true;
     })
     .sort((a, b) => {
@@ -149,11 +170,59 @@ const Library = () => {
     // [기존 alert 로직 삭제]
     if (!music || !music.id) return;
     
-    // music 객체에서 type을 추론합니다.
-    const musicType = music.type === 'beat' ? 'beat' : 'track';
+    const musicType = music.collectionType === 'beat' ? 'beat' : 'track';
     
     // context action을 호출합니다.
     actions.toggleFavorite?.(music.id, musicType, !!music.isFavorite);
+  };
+
+  const handleOpenRename = (music) => {
+    setRenameDialog({
+      open: true,
+      music,
+      value: music.title || '',
+      saving: false,
+    });
+  };
+
+  const handleCloseRename = () => {
+    setRenameDialog({
+      open: false,
+      music: null,
+      value: '',
+      saving: false,
+    });
+  };
+
+  const handleRenameSubmit = async () => {
+    if (!renameDialog.music) return;
+    const title = renameDialog.value.trim();
+    if (!title) {
+      actions.addNotification?.({ type: 'error', message: '제목을 입력해주세요.' });
+      return;
+    }
+    const userId = state.auth.user?.uid;
+    if (!userId) {
+      actions.addNotification?.({ type: 'error', message: '로그인이 필요합니다.' });
+      navigate('/auth');
+      return;
+    }
+    try {
+      setRenameDialog((prev) => ({ ...prev, saving: true }));
+      const musicType = renameDialog.music.collectionType === 'beat' ? 'beat' : 'track';
+      await updateLibraryItemTitle({
+        userId,
+        musicId: renameDialog.music.id,
+        musicType,
+        title,
+      });
+      actions.addNotification?.({ type: 'success', message: '제목을 수정했어요.' });
+      handleCloseRename();
+    } catch (error) {
+      console.error('rename failed', error);
+      actions.addNotification?.({ type: 'error', message: '제목 수정에 실패했습니다.' });
+      setRenameDialog((prev) => ({ ...prev, saving: false }));
+    }
   };
 
   // 색상 테마
@@ -350,6 +419,7 @@ const Library = () => {
                   <MenuItem value="all">전체</MenuItem>
                   <MenuItem value="generated">생성된 음악</MenuItem>
                   <MenuItem value="converted">변환된 음악</MenuItem>
+                  <MenuItem value="favorites">즐겨찾기</MenuItem>
                 </Select>
               </FormControl>
             </Grid>
@@ -433,18 +503,6 @@ const Library = () => {
                           border: `2px solid ${music.type === 'generated' ? '#FFD700' : '#50E3C2'}`
                         }}
                       />
-                      <IconButton
-                        size="small"
-                        onClick={() => handleToggleFavorite(music)}
-                        sx={{ 
-                          color: music.isFavorite ? '#FFD700' : colors.textLight, 
-                    '&:hover': {
-                      bgcolor: music.isFavorite ? 'rgba(255, 215, 0, 0.1)' : colors.border
-                          }
-                        }}
-                      >
-                        <Favorite />
-                      </IconButton>
                     </Box>
 
                     {/* 제목 */}
@@ -499,7 +557,7 @@ const Library = () => {
                     </Typography>
                   </CardContent>
 
-                  <CardActions sx={{ p: 2, pt: 0 }}>
+                  <CardActions sx={{ p: 2, pt: 0, display: 'flex', alignItems: 'center', gap: 1 }}>
                     <Button
                       startIcon={<PlayArrow />}
                       onClick={() => handlePlay(music)}
@@ -525,6 +583,30 @@ const Library = () => {
                       다운로드
                     </Button>
                     <IconButton
+                      onClick={() => handleOpenRename(music)}
+                      sx={{
+                        color: colors.textLight,
+                        '&:hover': {
+                          bgcolor: colors.border,
+                          color: colors.text,
+                        },
+                      }}
+                    >
+                      <Edit />
+                    </IconButton>
+                    <IconButton
+                      onClick={() => handleToggleFavorite(music)}
+                      sx={{
+                        color: music.isFavorite ? colors.accent : colors.textLight,
+                        '&:hover': {
+                          bgcolor: 'rgba(80, 227, 194, 0.1)',
+                          color: colors.accent,
+                        },
+                      }}
+                    >
+                      {music.isFavorite ? <Star /> : <StarBorder />}
+                    </IconButton>
+                    <IconButton
                       onClick={() => handleDelete(music.id)}
                       sx={{
                         color: colors.textLight,
@@ -544,6 +626,33 @@ const Library = () => {
           </Grid>
         )}
       </Container>
+
+      <Dialog open={renameDialog.open} onClose={handleCloseRename} fullWidth maxWidth="sm">
+        <DialogTitle>곡 제목 수정</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="제목"
+            fullWidth
+            value={renameDialog.value}
+            onChange={(e) =>
+              setRenameDialog((prev) => ({ ...prev, value: e.target.value }))
+            }
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseRename} disabled={renameDialog.saving}>
+            취소
+          </Button>
+          <Button
+            onClick={handleRenameSubmit}
+            disabled={renameDialog.saving}
+          >
+            저장
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

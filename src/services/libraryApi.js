@@ -22,7 +22,7 @@ function normalizeDoc(snapshot, type) {
   const data = snapshot.data();
   return {
     id: snapshot.id,
-    type,
+    collectionType: type,
     ...data,
   };
 }
@@ -105,11 +105,14 @@ export async function addMusicToLibrary(userId, musicData) {
     throw new Error('Music data is required');
   }
 
-  // 음악 타입에 따라 컬렉션 선택 (tracks 또는 beats)
-  const collectionName = musicData.type === 'beat' ? COLLECTION_BEATS : COLLECTION_TRACKS;
-  
-  // 문서 ID 생성 (기존 ID가 있으면 사용, 없으면 자동 생성)
-  const docId = musicData.id || doc(collection(db, collectionName)).id;
+  const collectionType =
+    musicData.collectionType ||
+    (musicData.type === 'beat' ? 'beat' : 'track');
+
+  const collectionName = collectionType === 'beat' ? COLLECTION_BEATS : COLLECTION_TRACKS;
+
+  const docRefForAuto = doc(collection(db, collectionName));
+  const docId = musicData.id ? String(musicData.id) : docRefForAuto.id;
   const docRef = doc(db, collectionName, docId);
 
   // 중복 확인
@@ -121,6 +124,7 @@ export async function addMusicToLibrary(userId, musicData) {
   // Firestore에 저장할 데이터 준비
   const dataToSave = {
     ...musicData,
+    collectionType,
     ownerId: userId,
     createdAt: musicData.createdAt ? new Date(musicData.createdAt) : serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -201,6 +205,29 @@ export async function setFavoriteStatus(userId, musicId, musicType, newFavoriteS
   console.log(`Music favorite status updated: ${musicId} -> ${newFavoriteStatus}`);
 }
 
+export async function updateLibraryItemTitle({ userId, musicId, musicType, title }) {
+  if (!userId || !musicId) {
+    throw new Error('User ID and Music ID are required');
+  }
+
+  const collectionName = musicType === 'beat' ? COLLECTION_BEATS : COLLECTION_TRACKS;
+  const docRef = doc(db, collectionName, musicId);
+
+  const docSnap = await getDoc(docRef);
+  if (!docSnap.exists()) {
+    throw new Error('Music not found');
+  }
+  const data = docSnap.data();
+  if (data.ownerId !== userId) {
+    throw new Error('You do not have permission to modify this music');
+  }
+
+  await updateDoc(docRef, {
+    title,
+    updatedAt: serverTimestamp(),
+  });
+}
+
 export function getTrackDocRef(trackId) {
   return doc(db, COLLECTION_TRACKS, trackId);
 }
@@ -214,6 +241,7 @@ const libraryApi = {
   addMusicToLibrary,
   removeMusicFromLibrary,
   setFavoriteStatus,
+  updateLibraryItemTitle,
   getTrackDocRef,
   getBeatDocRef,
 };

@@ -14,6 +14,7 @@ import AuthPage from './pages/Auth';
 import ScoreToMusic from './pages/ScoreToMusic';
 import RequireAuth from './components/common/RequireAuth';
 import { MusicContextProvider } from './context/MusicContext';
+import HomeFeed from './pages/HomeFeed';
 
 // ✅ MUI 테마 설정
 const theme = createTheme({
@@ -58,6 +59,7 @@ function App() {
             {/* ✅ 라우터로 각 페이지 연결 */}
             <Box component="main" sx={{ flexGrow: 1, bgcolor: 'background.default' }}>
               <Routes>
+                <Route path="/home" element={<HomeFeed />} />
                 {/* 기본 홈 (AI 음악 생성) */}
                 <Route path="/" element={<MusicGeneration />} />
                 <Route path="/generate" element={<MusicGeneration />} />

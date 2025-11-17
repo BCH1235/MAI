@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Container, Box, Typography, Paper, Button, Grid, Chip, Alert, IconButton, Slider,
-  Dialog, DialogTitle, DialogContent, List, ListItem, ListItemButton, ListItemIcon, ListItemText
+  Dialog, DialogTitle, DialogContent, List, ListItem, ListItemButton, ListItemIcon, ListItemText,
+  TextField
 } from '@mui/material';
 import {
   CheckCircle, PlayArrow, Pause, Download, Refresh, Share, Home, LibraryMusic, VolumeUp, BookmarkBorder,
@@ -42,6 +43,7 @@ const ResultPage = () => {
   const [publicUrl, setPublicUrl] = useState(null); // 변환된 공용 URL 저장
   const [isUploading, setIsUploading] = useState(false); // 업로드 중 상태
   const [uploadError, setUploadError] = useState(null); // 업로드 실패 에러
+  const [titleInput, setTitleInput] = useState('');
   const user = state.auth.user; // 사용자 정보
 
   const cachedResult = useMemo(() => loadScoreResultFromCache(), []);
@@ -63,6 +65,7 @@ const ResultPage = () => {
 
   const audioUrl = musicData?.audioUrl || '';
   const isConversion = !!(state.result?.convertedMusic || musicData?.type === 'score-generated' || musicData?.type === 'score-audio');
+  const resolvedTitle = titleInput?.trim() || musicData?.title || '제목 없는 배경음악';
 
   // 색상 테마
   const colors = {
@@ -98,6 +101,10 @@ const ResultPage = () => {
   useEffect(() => {
     if (audioRef.current) audioRef.current.volume = volume / 100;
   }, [volume]);
+
+  useEffect(() => {
+    setTitleInput(musicData?.title || '');
+  }, [musicData?.title]);
 
   const getGenreInfo = (genreId) =>
     GENRE_OPTIONS.find((g) => g.id === genreId) || { label: genreId, color: '#6366F1' };
@@ -169,7 +176,7 @@ const ResultPage = () => {
     setIsUploading(true); // 업로드 시작 상태
 
     try {
-      const fileName = musicData.title?.replace(/[^a-zA-Z0-9.-]/g, '_') || 'music';
+      const fileName = resolvedTitle?.replace(/[^a-zA-Z0-9.-]/g, '_') || 'music';
       const fileType = musicData.type === 'beat' ? 'beats' : 'tracks';
 
       // storageApi.js의 함수 사용
@@ -205,7 +212,7 @@ const ResultPage = () => {
       const a = document.createElement('a');
       a.href = audioUrl;
       const extension = audioUrl.endsWith('.wav') ? 'wav' : 'mp3';
-      a.download = `${musicData.title || 'music'}.${extension}`;
+      a.download = `${resolvedTitle || 'music'}.${extension}`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -236,8 +243,8 @@ const ResultPage = () => {
       });
       return; // 함수 종료
     }
-    const shareText = `"${musicData.title}" - AI로 생성한 음악`;
-    const fileName = `${musicData.title}.${audioUrl.endsWith('.wav') ? 'wav' : 'mp3'}`;
+    const shareText = `"${resolvedTitle}" - AI로 생성한 음악`;
+    const fileName = `${resolvedTitle}.${audioUrl.endsWith('.wav') ? 'wav' : 'mp3'}`;
     
     switch (option) {
       case 'facebook':
@@ -330,11 +337,14 @@ const ResultPage = () => {
       const finalAudioUrl = await getPublicUrl();
 
       // 2. musicData의 audioUrl을 공용 URL로 교체하여 새 객체 생성
+      const finalTitle = resolvedTitle || musicData.title || '제목 없는 배경음악';
       const dataToSave = {
         ...musicData,
+        title: finalTitle,
         audioUrl: finalAudioUrl,
         // (만약 Replicate URL이었다면) 원본 임시 URL도 백업
         sourceUrl: (musicData.audioUrl !== finalAudioUrl) ? musicData.audioUrl : null,
+        collectionType: musicData.collectionType || 'track',
       };
 
       // 3. Firebase에 *수정된 데이터(dataToSave)*를 저장
@@ -405,9 +415,25 @@ const ResultPage = () => {
                 {/* 플레이어 카드 */}
                 <Paper elevation={0} sx={{ p: 4, border: `1px solid ${colors.border}`, borderRadius: 2, mb: 3, bgcolor: colors.cardBg, color: colors.text }}>
                   <Box sx={{ mb: 3 }}>
-                    <Typography variant="h4" fontWeight={600} sx={{ mb: 1, color: colors.text }}>
-                      {musicData.title}
-                    </Typography>
+                  <TextField
+                    fullWidth
+                    value={titleInput}
+                    onChange={(e) => setTitleInput(e.target.value)}
+                    placeholder="곡 제목을 입력하세요"
+                    sx={{
+                      mb: 1,
+                      '& .MuiInputBase-input': {
+                        fontSize: '1.8rem',
+                        fontWeight: 600,
+                        color: colors.text,
+                      },
+                      '& .MuiOutlinedInput-root': {
+                        '& fieldset': { borderColor: colors.border },
+                        '&:hover fieldset': { borderColor: colors.accent },
+                        '&.Mui-focused fieldset': { borderColor: colors.accent },
+                      },
+                    }}
+                  />
                     <Typography variant="body1" sx={{ opacity: 0.8, color: colors.textLight }}>
                       {musicData.type === 'score-generated' || musicData.type === 'score-audio'
                         ? `${musicData.originalFile} 파일을 오디오로 변환했습니다.`
